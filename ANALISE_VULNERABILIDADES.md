@@ -461,12 +461,12 @@ Dependências mantidas atualizadas com versões recentes de bibliotecas de segur
 
 | Dependência | Versão | Status | Notas |
 |---|---|---|---|
-| Spring Boot | 4.0.5 | Atual | Versão recente, suporte ativo |
-| Spring Security | 7.0.6 | Atual | Incluído no Spring Boot 4.0.5 |
+| Spring Boot | 3.3.4 | Atual | Versão estável, suporte ativo |
+| Spring Security | 6.3.3 | Atual | Incluído no Spring Boot 3.3.4 |
 | JJWT | 0.12.5 | Atual | Versão recente, sem CVEs conhecidas |
 | PostgreSQL Driver | 42.7.10 | Atual | Sem vulnerabilidades conhecidas |
-| Hibernate | 7.2.7 | Atual | Versão recente de ORM |
-| JaCoCo | 0.8.11 | Atual | Ferramentadcoverture sem issues |
+| Hibernate | 6.5.3 | Atual | Versão recente de ORM |
+| JaCoCo | 0.8.11 | Atual | Ferramenta de cobertura sem issues |
 | Lombok | Atual | Atual | Sem vulnerabilidades críticas |
 
 #### Verificação de CVEs

@@ -19,8 +19,8 @@ public class OrdemServicoController {
     }
 
     @PostMapping
-    public ResponseEntity<OrdemServicoResponse> criar(@RequestParam UUID clienteId, @RequestParam String placa) {
-        return ResponseEntity.ok(OrdemServicoResponse.from(gerenciadorOS.criarOS(clienteId, placa)));
+    public ResponseEntity<OrdemServicoResponse> criar(@RequestBody CriarOSRequest request) {
+        return ResponseEntity.ok(OrdemServicoResponse.from(gerenciadorOS.criarOS(request.getClienteId(), request.getPlaca())));
     }
 
     @GetMapping
@@ -47,30 +47,30 @@ public class OrdemServicoController {
         return ResponseEntity.ok().build();
     }
 
-    @PostMapping("/{id}/diagnostico")
+    @PatchMapping("/{id}/diagnostico")
     public ResponseEntity<OrdemServicoResponse> registrarDiagnostico(@PathVariable UUID id,
             @RequestBody DiagnosticoRequest request) {
         return ResponseEntity.ok(OrdemServicoResponse.from(gerenciadorOS.registrarDiagnostico(id, request.getDiagnostico())));
     }
 
-    @PostMapping("/{id}/orcamento")
+    @PatchMapping("/{id}/orcamento")
     public ResponseEntity<OrdemServicoResponse> gerarOrcamento(@PathVariable UUID id) {
         return ResponseEntity.ok(OrdemServicoResponse.from(gerenciadorOS.gerarOrcamento(id)));
     }
 
-    @PostMapping("/{id}/aprovar")
+    @PatchMapping("/{id}/aprovar")
     public ResponseEntity<Void> aprovar(@PathVariable UUID id) {
         gerenciadorOS.aprovarOrcamento(id);
         return ResponseEntity.ok().build();
     }
 
-    @PostMapping("/{id}/finalizar")
+    @PatchMapping("/{id}/finalizar")
     public ResponseEntity<Void> finalizar(@PathVariable UUID id) {
         gerenciadorOS.finalizarOS(id);
         return ResponseEntity.ok().build();
     }
 
-    @PostMapping("/{id}/entregar")
+    @PatchMapping("/{id}/entregar")
     public ResponseEntity<Void> entregar(@PathVariable UUID id) {
         gerenciadorOS.entregarOS(id);
         return ResponseEntity.ok().build();
@@ -99,5 +99,15 @@ public class OrdemServicoController {
 
         public String getDiagnostico() { return diagnostico; }
         public void setDiagnostico(String diagnostico) { this.diagnostico = diagnostico; }
+    }
+
+    public static class CriarOSRequest {
+        private UUID clienteId;
+        private String placa;
+
+        public UUID getClienteId() { return clienteId; }
+        public void setClienteId(UUID clienteId) { this.clienteId = clienteId; }
+        public String getPlaca() { return placa; }
+        public void setPlaca(String placa) { this.placa = placa; }
     }
 }

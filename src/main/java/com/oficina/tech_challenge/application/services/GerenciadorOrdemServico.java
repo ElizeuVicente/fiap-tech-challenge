@@ -98,6 +98,7 @@ public class GerenciadorOrdemServico implements IGerenciadorOrdemServico {
     public void finalizarOS(UUID osId) {
         OrdemServico os = osRepository.findById(osId)
                 .orElseThrow(() -> new IllegalArgumentException("OS não encontrada"));
+        System.out.println("Tentando finalizar OS: " + osId + " | Status atual: " + os.getStatus());
         os.finalizar();
         osRepository.save(os);
     }

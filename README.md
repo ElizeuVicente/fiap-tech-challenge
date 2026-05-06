@@ -53,26 +53,22 @@ Implementação robusta de autenticação e autorização:
 ## Stack Técnica
 
 ### Linguagem e Framework
-
 - Linguagem: Java 17
-- Framework: Spring Boot 4.0.5
+- Framework: Spring Boot 3.3.4
 - Build Tool: Maven 3.9.6
 
 ### Banco de Dados
-
 - SGBD: PostgreSQL 15
 - Driver: PostgreSQL JDBC 42.7.10
-- ORM: Hibernate 7.2.7 com Spring Data JPA
+- ORM: Hibernate 6.5.3 com Spring Data JPA
 
 ### Segurança
-
-- Spring Security 7.0.6
+- Spring Security 6.3.3
 - JWT: JJWT 0.12.5 (jjwt-api, jjwt-impl, jjwt-jackson)
 - Validação: Jakarta Bean Validation
 
 ### Documentação e Testes
-
-- API Doc: Springdoc OpenAPI 2.5.0
+- API Doc: Springdoc OpenAPI 2.6.0
 - Testes: JUnit 5 via Spring Boot Test
 - Coverage: JaCoCo 0.8.11 (mínimo 80% nos domínios críticos)
 - Test Database: H2 Database (escopo de teste)
@@ -173,62 +169,62 @@ POST /api/auth/login
   Response: 200 OK { "token": "jwt_token_aqui" }
 ```
 
-#### Clientes
+#### Clientes e Veículos
 
 ```
-GET    /api/clientes                 - Listar todos
-GET    /api/clientes/{id}            - Obter por ID
-POST   /api/clientes                 - Criar novo cliente
-PUT    /api/clientes/{id}            - Atualizar cliente
-DELETE /api/clientes/{id}            - Deletar cliente
-```
+GET    /api/clientes                         - Listar todos os clientes
+POST   /api/clientes                         - Criar novo cliente
+GET    /api/clientes/{id}                    - Obter cliente por ID
+PUT    /api/clientes/{id}                    - Atualizar cliente
+DELETE /api/clientes/{id}                    - Deletar cliente
 
-#### Veículos
-
-```
-GET    /api/veiculos                 - Listar todos
-GET    /api/veiculos/{id}            - Obter por ID
-POST   /api/veiculos                 - Criar novo veículo
-PUT    /api/veiculos/{id}            - Atualizar veículo
-DELETE /api/veiculos/{id}            - Deletar veículo
+GET    /api/clientes/{id}/veiculos           - Listar veículos de um cliente
+POST   /api/clientes/{id}/veiculos           - Adicionar veículo ao cliente
+PUT    /api/clientes/{id}/veiculos/{vId}      - Atualizar veículo
+DELETE /api/clientes/{id}/veiculos/{vId}      - Remover veículo
 ```
 
 #### Serviços
 
 ```
-GET    /api/servicos                 - Listar todos os serviços
-GET    /api/servicos/{id}            - Obter serviço por ID
-POST   /api/servicos                 - Criar novo serviço
-PUT    /api/servicos/{id}            - Atualizar serviço
-DELETE /api/servicos/{id}            - Deletar serviço
+GET    /api/servicos                         - Listar todos os serviços
+POST   /api/servicos                         - Cadastrar novo serviço
+GET    /api/servicos/{id}                    - Obter serviço por ID
+PUT    /api/servicos/{id}                    - Atualizar serviço
+DELETE /api/servicos/{id}                    - Remover serviço
 ```
 
 #### Peças e Insumos
 
 ```
-GET    /api/pecas                    - Listar todas as peças
-GET    /api/pecas/{id}               - Obter peça por ID
-POST   /api/pecas                    - Criar nova peça
-PUT    /api/pecas/{id}               - Atualizar peça
-DELETE /api/pecas/{id}               - Deletar peça
+GET    /api/pecas                            - Listar todas as peças
+POST   /api/pecas                            - Cadastrar nova peça
+GET    /api/pecas/{id}                       - Obter peça por ID
+PUT    /api/pecas/{id}                       - Atualizar peça
+DELETE /api/pecas/{id}                       - Remover peça
+PATCH  /api/pecas/{id}/estoque               - Atualizar quantidade (abater)
 ```
 
-#### Ordens de Serviço
+#### Ordens de Serviço (Fluxo RESTful)
 
 ```
-GET    /api/ordens                   - Listar todas as ordens
-GET    /api/ordens/{id}              - Obter ordem por ID
-POST   /api/ordens                   - Criar nova ordem
-PUT    /api/ordens/{id}              - Atualizar ordem
-GET    /api/ordens/{id}/status       - Consultar status atual
-PATCH  /api/ordens/{id}/status       - Atualizar status
+GET    /api/ordens-servico                   - Listar todas as ordens
+POST   /api/ordens-servico                   - Abrir nova OS (JSON Body)
+GET    /api/ordens-servico/{id}              - Obter detalhes da OS
+GET    /api/ordens-servico/cliente/{cpfCnpj} - Consultar OSs por Cliente
+
+POST   /api/ordens-servico/{id}/itens        - Adicionar serviços/peças
+PATCH  /api/ordens-servico/{id}/orcamento    - Gerar orçamento (calcula valores)
+PATCH  /api/ordens-servico/{id}/diagnostico  - Registrar diagnóstico
+PATCH  /api/ordens-servico/{id}/aprovar      - Aprovar orçamento (baixa estoque)
+PATCH  /api/ordens-servico/{id}/finalizar    - Concluir execução
+PATCH  /api/ordens-servico/{id}/entregar     - Registrar entrega ao cliente
 ```
 
 #### Monitoramento
 
 ```
-GET    /api/metricas/tempo-execucao  - Tempo médio de execução dos serviços
-GET    /api/metricas/utilizacao      - Taxa de utilização do estoque
+GET    /api/ordens-servico/monitoramento      - Métricas de tempo médio e totais
 ```
 
 ## Autenticação e Autorização
