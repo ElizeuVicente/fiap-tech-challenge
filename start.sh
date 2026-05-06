@@ -24,7 +24,7 @@ $DOCKER_COMPOSE up --build -d
 
 echo "⏳ Aguardando a API ficar pronta..."
 # Aguarda até que a API responda na porta 8080
-until $(curl --output /dev/null --silent --fail http://localhost:8080/v3/api-docs); do
+until curl -s http://localhost:8080/ > /dev/null; do
     printf '.'
     sleep 5
 done
