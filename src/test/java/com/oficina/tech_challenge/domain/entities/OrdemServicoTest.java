@@ -17,7 +17,7 @@ class OrdemServicoTest {
 
     @BeforeEach
     void setUp() {
-        cliente = new Cliente("João Silva", new CpfCnpj("123.456.789-00"), "joao@email.com", "11999999999");
+        cliente = new Cliente("João Silva", new CpfCnpj("123.456.789-09"), "joao@email.com", "11999999999");
         veiculo = new Veiculo("ABC1234", "Ford", "Fiesta", 2020);
         servico = new Servico("Troca de Óleo", new BigDecimal("150.00"), 30);
         peca = new Peca("Óleo 5W30", new BigDecimal("50.00"), 10);
@@ -73,5 +73,33 @@ class OrdemServicoTest {
 
         os.entregar();
         assertEquals(StatusOrdemServico.ENTREGUE, os.getStatus());
+    }
+
+    @Test
+    void deveRecusarOrcamentoAguardandoAprovacao() {
+        OrdemServico os = new OrdemServico(cliente, veiculo);
+        os.registrarDiagnostico("Teste");
+        os.gerarOrcamento();
+
+        os.recusar();
+
+        assertEquals(StatusOrdemServico.RECUSADA, os.getStatus());
+        assertNotNull(os.getDataFinalizacao());
+    }
+
+    @Test
+    void naoDeveRecusarOrcamentoForaDaEtapaDeAprovacao() {
+        OrdemServico os = new OrdemServico(cliente, veiculo);
+
+        assertThrows(IllegalStateException.class, os::recusar);
+    }
+
+    @Test
+    void naoDeveRetornarParaDiagnosticoDepoisDoOrcamento() {
+        OrdemServico os = new OrdemServico(cliente, veiculo);
+        os.registrarDiagnostico("Teste");
+        os.gerarOrcamento();
+
+        assertThrows(IllegalStateException.class, () -> os.atualizarStatus(StatusOrdemServico.DIAGNOSTICO));
     }
 }

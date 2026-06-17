@@ -22,7 +22,63 @@ public class CpfCnpj {
 
     private boolean isValid(String value) {
         String cleaned = value.replaceAll("\\D", "");
-        return cleaned.length() == 11 || cleaned.length() == 14;
+        if (cleaned.length() == 11) {
+            return isValidCpf(cleaned);
+        }
+        if (cleaned.length() == 14) {
+            return isValidCnpj(cleaned);
+        }
+        return false;
+    }
+
+    private boolean isValidCpf(String cpf) {
+        if (hasAllDigitsEqual(cpf)) {
+            return false;
+        }
+
+        int firstDigit = calculateDigit(cpf, 9, 10);
+        int secondDigit = calculateDigit(cpf, 10, 11);
+
+        return Character.getNumericValue(cpf.charAt(9)) == firstDigit
+                && Character.getNumericValue(cpf.charAt(10)) == secondDigit;
+    }
+
+    private boolean isValidCnpj(String cnpj) {
+        if (hasAllDigitsEqual(cnpj)) {
+            return false;
+        }
+
+        int firstDigit = calculateCnpjDigit(cnpj, 12);
+        int secondDigit = calculateCnpjDigit(cnpj, 13);
+
+        return Character.getNumericValue(cnpj.charAt(12)) == firstDigit
+                && Character.getNumericValue(cnpj.charAt(13)) == secondDigit;
+    }
+
+    private int calculateDigit(String value, int length, int weight) {
+        int sum = 0;
+        for (int i = 0; i < length; i++) {
+            sum += Character.getNumericValue(value.charAt(i)) * (weight - i);
+        }
+        int result = 11 - (sum % 11);
+        return result >= 10 ? 0 : result;
+    }
+
+    private int calculateCnpjDigit(String cnpj, int length) {
+        int[] weights = length == 12
+                ? new int[] {5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2}
+                : new int[] {6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2};
+
+        int sum = 0;
+        for (int i = 0; i < length; i++) {
+            sum += Character.getNumericValue(cnpj.charAt(i)) * weights[i];
+        }
+        int result = sum % 11;
+        return result < 2 ? 0 : 11 - result;
+    }
+
+    private boolean hasAllDigitsEqual(String value) {
+        return value.chars().distinct().count() == 1;
     }
 
     public String getValue() {

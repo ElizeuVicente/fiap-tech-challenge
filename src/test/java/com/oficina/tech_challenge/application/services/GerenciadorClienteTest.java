@@ -38,7 +38,7 @@ class GerenciadorClienteTest {
     @BeforeEach
     void setUp() {
         clienteId = UUID.randomUUID();
-        cliente = new Cliente("João Silva", new CpfCnpj("12345678900"), "joao@email.com", "11999999999");
+        cliente = new Cliente("João Silva", new CpfCnpj("12345678909"), "joao@email.com", "11999999999");
     }
 
     @Test
@@ -46,7 +46,7 @@ class GerenciadorClienteTest {
         when(clienteRepository.findByCpfCnpj(any())).thenReturn(Optional.empty());
         when(clienteRepository.save(any())).thenReturn(cliente);
 
-        Cliente resultado = gerenciadorCliente.cadastrarCliente("João Silva", "12345678900", "joao@email.com", "11999999999");
+        Cliente resultado = gerenciadorCliente.cadastrarCliente("João Silva", "12345678909", "joao@email.com", "11999999999");
 
         assertNotNull(resultado);
         verify(clienteRepository).save(any(Cliente.class));
@@ -57,7 +57,7 @@ class GerenciadorClienteTest {
         when(clienteRepository.findByCpfCnpj(any())).thenReturn(Optional.of(cliente));
 
         assertThrows(IllegalArgumentException.class,
-                () -> gerenciadorCliente.cadastrarCliente("João", "12345678900", "joao@email.com", "11999"));
+                () -> gerenciadorCliente.cadastrarCliente("João", "12345678909", "joao@email.com", "11999"));
     }
 
     @Test
@@ -128,7 +128,7 @@ class GerenciadorClienteTest {
     void deveBuscarClientePorCpfCnpj() {
         when(clienteRepository.findByCpfCnpj(any())).thenReturn(Optional.of(cliente));
 
-        Optional<Cliente> resultado = gerenciadorCliente.buscarPorCpfCnpj("12345678900");
+        Optional<Cliente> resultado = gerenciadorCliente.buscarPorCpfCnpj("12345678909");
 
         assertTrue(resultado.isPresent());
     }

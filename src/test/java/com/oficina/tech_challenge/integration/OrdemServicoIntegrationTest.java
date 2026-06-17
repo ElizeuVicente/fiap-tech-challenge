@@ -92,7 +92,7 @@ class OrdemServicoIntegrationTest {
     @Test
     void deveCalcularValorTotalDaOSCorretamente() {
         Cliente cliente = gerenciadorCliente.cadastrarCliente(
-                "Pedro Teste", "11122233300", "pedro@email.com", "11977776666");
+                "Pedro Teste", "11122233396", "pedro@email.com", "11977776666");
         gerenciadorCliente.adicionarVeiculo(cliente.getId(), "GHI3456", "Honda", "Civic", 2021);
 
         Servico servico = gerenciadorServico.cadastrarServico("Troca de Óleo", new BigDecimal("100.00"), 30);
@@ -110,12 +110,12 @@ class OrdemServicoIntegrationTest {
     @Test
     void deveBuscarOSPorCpfCnpjDoCliente() {
         Cliente cliente = gerenciadorCliente.cadastrarCliente(
-                "Ana Teste", "55566677700", "ana@email.com", "11966665555");
+                "Ana Teste", "55566677720", "ana@email.com", "11966665555");
         gerenciadorCliente.adicionarVeiculo(cliente.getId(), "JKL7890", "Chevrolet", "Onix", 2023);
 
         gerenciadorOS.criarOS(cliente.getId(), "JKL7890");
 
-        List<OrdemServico> ordens = gerenciadorOS.buscarPorCpfCnpj("55566677700");
+        List<OrdemServico> ordens = gerenciadorOS.buscarPorCpfCnpj("55566677720");
         assertFalse(ordens.isEmpty());
         assertEquals(cliente.getId(), ordens.get(0).getCliente().getId());
     }
@@ -123,7 +123,7 @@ class OrdemServicoIntegrationTest {
     @Test
     void deveRetornarMonitoramentoComTempoMedio() {
         Cliente cliente = gerenciadorCliente.cadastrarCliente(
-                "Carlos Teste", "44455566600", "carlos@email.com", "11955554444");
+                "Carlos Teste", "44455566619", "carlos@email.com", "11955554444");
         gerenciadorCliente.adicionarVeiculo(cliente.getId(), "MNO1234", "Fiat", "Pulse", 2024);
         Peca peca = gerenciadorEstoque.cadastrarPeca("Filtro de Ar", new BigDecimal("25.00"), 10);
 
@@ -142,7 +142,7 @@ class OrdemServicoIntegrationTest {
     @Test
     void deveLancarExcecaoAoPularEtapaDoFluxo() {
         Cliente cliente = gerenciadorCliente.cadastrarCliente(
-                "Lucas Teste", "77788899900", "lucas@email.com", "11944443333");
+                "Lucas Teste", "77788899941", "lucas@email.com", "11944443333");
         gerenciadorCliente.adicionarVeiculo(cliente.getId(), "PQR5678", "VW", "Golf", 2020);
 
         OrdemServico os = gerenciadorOS.criarOS(cliente.getId(), "PQR5678");
@@ -155,7 +155,7 @@ class OrdemServicoIntegrationTest {
     @Test
     void deveCrudCompletoDeCliente() {
         Cliente criado = gerenciadorCliente.cadastrarCliente(
-                "Fernanda Teste", "33344455500", "fernanda@email.com", "11933332222");
+                "Fernanda Teste", "33344455508", "fernanda@email.com", "11933332222");
         assertNotNull(criado.getId());
 
         Cliente atualizado = gerenciadorCliente.atualizarCliente(

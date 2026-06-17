@@ -84,6 +84,35 @@ public class OrdemServico {
         this.dataInicioExecucao = LocalDateTime.now();
     }
 
+    public void recusar() {
+        if (this.status != StatusOrdemServico.AGUARDANDO_APROVACAO) {
+            throw new IllegalStateException("Somente OS aguardando aprovação podem ser recusadas");
+        }
+        this.status = StatusOrdemServico.RECUSADA;
+        this.dataFinalizacao = LocalDateTime.now();
+    }
+
+    public void atualizarStatus(StatusOrdemServico novoStatus) {
+        switch (novoStatus) {
+            case DIAGNOSTICO -> {
+                if (this.status != StatusOrdemServico.RECEBIDA && this.status != StatusOrdemServico.DIAGNOSTICO) {
+                    throw new IllegalStateException("OS só pode entrar em diagnóstico a partir de RECEBIDA");
+                }
+                registrarDiagnostico(this.diagnostico == null ? "Atualização externa" : this.diagnostico);
+            }
+            case AGUARDANDO_APROVACAO -> gerarOrcamento();
+            case EXECUCAO -> aprovar();
+            case FINALIZADA -> finalizar();
+            case ENTREGUE -> entregar();
+            case RECUSADA -> recusar();
+            case RECEBIDA -> {
+                if (this.status != StatusOrdemServico.RECEBIDA) {
+                    throw new IllegalStateException("Não é possível retornar uma OS para RECEBIDA");
+                }
+            }
+        }
+    }
+
     public void finalizar() {
         if (this.status != StatusOrdemServico.EXECUCAO) {
             throw new IllegalStateException("Somente OS em execução podem ser finalizadas");

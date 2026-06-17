@@ -26,9 +26,10 @@ public class Veiculo {
     private Integer ano;
 
     public Veiculo(String placa, String marca, String modelo, Integer ano) {
-        validatePlaca(placa);
+        String placaNormalizada = normalizePlaca(placa);
+        validatePlaca(placaNormalizada);
         validateAno(ano);
-        this.placa = placa;
+        this.placa = placaNormalizada;
         this.marca = marca;
         this.modelo = modelo;
         this.ano = ano;
@@ -38,6 +39,13 @@ public class Veiculo {
         if (placa == null || !placa.matches("[A-Z]{3}[0-9][A-Z0-9][0-9]{2}")) {
             throw new IllegalArgumentException("Placa inválida (Formato Mercosul ou Antigo)");
         }
+    }
+
+    private String normalizePlaca(String placa) {
+        if (placa == null) {
+            return null;
+        }
+        return placa.trim().toUpperCase().replace("-", "");
     }
 
     private void validateAno(Integer ano) {

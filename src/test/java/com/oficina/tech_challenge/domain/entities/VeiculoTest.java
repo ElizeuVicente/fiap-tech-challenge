@@ -18,6 +18,12 @@ class VeiculoTest {
     }
 
     @Test
+    void deveAceitarPlacaPadraoAntigoComHifen() {
+        Veiculo v = new Veiculo("ABC-1234", "Ford", "Fiesta", 2020);
+        assertEquals("ABC1234", v.getPlaca());
+    }
+
+    @Test
     void deveLancarExcecaoParaPlacaInvalida() {
         assertThrows(IllegalArgumentException.class, () -> new Veiculo("ABC12345", "Ford", "Fiesta", 2020));
         assertThrows(IllegalArgumentException.class, () -> new Veiculo("AB1234", "Ford", "Fiesta", 2020));
