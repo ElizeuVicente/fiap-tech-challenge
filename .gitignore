@@ -1,4 +1,5 @@
 HELP.md
+docs/
 target/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
@@ -29,5 +30,19 @@ build/
 !**/src/main/**/build/
 !**/src/test/**/build/
 
+### Terraform ###
+**/.terraform/
+*.tfstate
+*.tfstate.*
+
 ### VS Code ###
 .vscode/
+
+### Documents ###
+*.env
+.env
+.env.*
+!.env.example
+
+### Local binaries ###
+minikube-linux-amd64

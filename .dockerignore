@@ -1,0 +1,15 @@
+.git
+.github
+.mvn/wrapper/maven-wrapper.jar
+target
+build
+.terraform
+**/.terraform
+*.tfstate
+*.tfstate.*
+.env
+.env.*
+!.env.example
+*.log
+*.tmp
+HELP.md

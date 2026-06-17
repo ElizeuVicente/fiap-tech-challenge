@@ -1,0 +1,92 @@
+name: CI/CD
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository }}/oficina-tech-challenge
+
+jobs:
+  build-test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Run tests
+        run: ./mvnw verify
+
+  docker:
+    name: Build Docker image
+    runs-on: ubuntu-latest
+    needs: build-test
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:latest
+
+  deploy:
+    name: Deploy to Kubernetes
+    runs-on: ubuntu-latest
+    needs: docker
+    if: github.event_name != 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure kubeconfig
+        env:
+          KUBE_CONFIG_B64: ${{ secrets.KUBE_CONFIG }}
+        run: |
+          if [ -z "$KUBE_CONFIG_B64" ]; then
+            echo "KUBE_CONFIG secret is not configured; skipping deploy."
+            echo "skip_deploy=true" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          mkdir -p "$HOME/.kube"
+          echo "$KUBE_CONFIG_B64" | base64 -d > "$HOME/.kube/config"
+
+      - name: Update image
+        if: env.skip_deploy != 'true'
+        run: |
+          sed -i "s|oficina-tech-challenge:latest|${{ env.IMAGE_NAME }}:${{ github.sha }}|g" k8s/deployment.yaml
+
+      - name: Apply manifests
+        if: env.skip_deploy != 'true'
+        run: kubectl apply -f k8s/
+
+      - name: Wait for rollout
+        if: env.skip_deploy != 'true'
+        run: kubectl rollout status deployment/oficina-api -n oficina --timeout=180s

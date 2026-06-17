@@ -29,11 +29,18 @@ services:
       SPRING_DATASOURCE_PASSWORD: password
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
       SPRING_JPA_SHOW_SQL: false
-      SECURITY_JWT_SECRET: your_very_strong_and_long_jwt_secret_key_1234567890
-      JAVA_TOOL_OPTIONS: -XX:+UseG1GC -XX:MaxRAMPercentage=75.0
+      SECURITY_JWT_SECRET: ${SECURITY_JWT_SECRET}
+      EXTERNAL_WEBHOOK_SECRET: ${EXTERNAL_WEBHOOK_SECRET}
+      JAVA_OPTS: ${JAVA_OPTS:--XX:+UseG1GC -XX:MaxRAMPercentage=75.0}
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health || exit 1" ]
+      interval: 30s
+      timeout: 3s
+      retries: 5
+      start_period: 40s
     restart: unless-stopped
 
 volumes:
