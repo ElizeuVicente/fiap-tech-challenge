@@ -439,13 +439,10 @@ O workflow `.github/workflows/ci-cd.yml` executa:
 
 ## Documentacao complementar
 
-- Handoff tecnico: `docs/HANDOFF.md`
-- Guia para agentes: `docs/AGENTS.md`
-- Registro de alteracoes: `docs/registro-alteracoes.md`
 - Infraestrutura: `infra/README.md`
 - Analise de vulnerabilidades: `ANALISE_VULNERABILIDADES.md`
-- Collection Postman: `docs/postman/oficina-tech-challenge-fase2.postman_collection.json`
 
+  
 ## Troubleshooting
 
 Porta 8080 ocupada:
