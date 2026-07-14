@@ -10,6 +10,7 @@ import com.oficina.tech_challenge.domain.repositories.NotificacaoOrcamentoReposi
 import com.oficina.tech_challenge.domain.repositories.OrdemServicoRepository;
 import com.oficina.tech_challenge.domain.repositories.PecaRepository;
 import com.oficina.tech_challenge.domain.repositories.ServicoRepository;
+import com.oficina.tech_challenge.domain.repositories.VeiculoRepository;
 import com.oficina.tech_challenge.domain.valueobjects.CpfCnpj;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,6 +43,9 @@ class GerenciadorOrdemServicoTest {
 
     @Mock
     private ClienteRepository clienteRepository;
+
+    @Mock
+    private VeiculoRepository veiculoRepository;
 
     @Mock
     private NotificacaoOrcamentoRepository notificacaoRepository;
@@ -93,7 +97,8 @@ class GerenciadorOrdemServicoTest {
                 List.of(new AberturaOrdemServicoCommand.PecaData(pecaId, 2)));
 
         when(clienteRepository.findByCpfCnpj(any())).thenReturn(Optional.empty());
-        when(clienteRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(veiculoRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(clienteRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(servicoRepository.findById(servicoId)).thenReturn(Optional.of(servico));
         when(pecaRepository.findById(pecaId)).thenReturn(Optional.of(peca));
         when(osRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));

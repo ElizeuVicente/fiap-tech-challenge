@@ -11,6 +11,7 @@ import com.oficina.tech_challenge.domain.repositories.NotificacaoOrcamentoReposi
 import com.oficina.tech_challenge.domain.repositories.OrdemServicoRepository;
 import com.oficina.tech_challenge.domain.repositories.PecaRepository;
 import com.oficina.tech_challenge.domain.repositories.ServicoRepository;
+import com.oficina.tech_challenge.domain.repositories.VeiculoRepository;
 import com.oficina.tech_challenge.domain.valueobjects.CpfCnpj;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,6 +26,7 @@ public class GerenciadorOrdemServico implements IGerenciadorOrdemServico {
     private final ServicoRepository servicoRepository;
     private final PecaRepository pecaRepository;
     private final ClienteRepository clienteRepository;
+    private final VeiculoRepository veiculoRepository;
     private final NotificacaoOrcamentoRepository notificacaoRepository;
     private final GerenciadorCliente gerenciadorCliente;
 
@@ -32,12 +34,14 @@ public class GerenciadorOrdemServico implements IGerenciadorOrdemServico {
             ServicoRepository servicoRepository,
             PecaRepository pecaRepository,
             ClienteRepository clienteRepository,
+            VeiculoRepository veiculoRepository,
             NotificacaoOrcamentoRepository notificacaoRepository,
             GerenciadorCliente gerenciadorCliente) {
         this.osRepository = osRepository;
         this.servicoRepository = servicoRepository;
         this.pecaRepository = pecaRepository;
         this.clienteRepository = clienteRepository;
+        this.veiculoRepository = veiculoRepository;
         this.notificacaoRepository = notificacaoRepository;
         this.gerenciadorCliente = gerenciadorCliente;
     }
@@ -67,8 +71,9 @@ public class GerenciadorOrdemServico implements IGerenciadorOrdemServico {
                         emailOuPadrao(command.cliente().email()),
                         command.cliente().telefone()));
 
-        Veiculo veiculo = cliente.getVeiculos().stream()
-                .filter(v -> v.getPlaca().equals(command.veiculo().placa()))
+        String placaNormalizada = command.veiculo().placa().trim().toUpperCase().replace("-", "");
+        cliente.getVeiculos().stream()
+                .filter(v -> v.getPlaca().equals(placaNormalizada))
                 .findFirst()
                 .orElseGet(() -> {
                     Veiculo novoVeiculo = new Veiculo(
@@ -76,12 +81,17 @@ public class GerenciadorOrdemServico implements IGerenciadorOrdemServico {
                             command.veiculo().marca(),
                             command.veiculo().modelo(),
                             command.veiculo().ano());
-                    cliente.adicionarVeiculo(novoVeiculo);
-                    return novoVeiculo;
+                    Veiculo veiculoPersistido = veiculoRepository.saveAndFlush(novoVeiculo);
+                    cliente.adicionarVeiculo(veiculoPersistido);
+                    return veiculoPersistido;
                 });
 
-        Cliente clientePersistido = clienteRepository.save(cliente);
-        OrdemServico os = new OrdemServico(clientePersistido, veiculo);
+        Cliente clientePersistido = clienteRepository.saveAndFlush(cliente);
+        Veiculo veiculoPersistido = clientePersistido.getVeiculos().stream()
+                .filter(v -> v.getPlaca().equals(placaNormalizada))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Veículo não encontrado após persistência"));
+        OrdemServico os = new OrdemServico(clientePersistido, veiculoPersistido);
         adicionarItensNaOrdem(os, command.servicos(), command.pecas());
         return osRepository.save(os);
     }
