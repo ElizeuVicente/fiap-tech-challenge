@@ -18,7 +18,7 @@ import io.jsonwebtoken.JwtException;
 @Service
 public class JwtService {
 
-    @Value("${security.jwt.secret:defaultsecretkeymustbestrongerthanthis123456}")
+    @Value("${security.jwt.secret}")
     private String secretKey;
 
     @Value("${security.jwt.expiration:86400000}")
