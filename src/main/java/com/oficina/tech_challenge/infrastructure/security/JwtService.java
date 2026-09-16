@@ -13,6 +13,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Function;
+import io.jsonwebtoken.JwtException;
 
 @Service
 public class JwtService {
@@ -50,6 +51,18 @@ public class JwtService {
         final String username = extractUsername(token);
         return (username.equals(userDetails.getUsername())) && !isTokenExpired(token);
     }
+
+    public boolean isClientTokenValid(String token) {
+        try {
+            Claims claims = extractAllClaims(token);
+            return "CLIENTE".equals(claims.get("role", String.class))
+                    && "oficina-auth".equals(claims.getIssuer())
+                    && claims.getAudience().contains("oficina-api")
+                    && !claims.getExpiration().before(new Date());
+        } catch (JwtException | IllegalArgumentException ex) { return false; }
+    }
+
+    public String extractClientCpf(String token) { return extractClaim(token, c -> c.get("cpf", String.class)); }
 
     private boolean isTokenExpired(String token) {
         return extractExpiration(token).before(new Date());

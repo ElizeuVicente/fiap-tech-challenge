@@ -1,0 +1,9 @@
+<configuration>
+  <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+      <includeMdc>true</includeMdc>
+      <customFields>{"service":"oficina-api","environment":"${APP_ENVIRONMENT:-local}"}</customFields>
+    </encoder>
+  </appender>
+  <root level="INFO"><appender-ref ref="JSON"/></root>
+</configuration>

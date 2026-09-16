@@ -1,6 +1,7 @@
 package com.oficina.tech_challenge.application.interfaces;
 
 import com.oficina.tech_challenge.application.dtos.MonitoramentoData;
+import com.oficina.tech_challenge.application.dtos.MetricasNegocioData;
 import com.oficina.tech_challenge.application.dtos.AberturaOrdemServicoCommand;
 import com.oficina.tech_challenge.application.dtos.AtualizacaoStatusCommand;
 import com.oficina.tech_challenge.application.dtos.NotificacaoOrcamentoCommand;
@@ -26,4 +27,5 @@ public interface IGerenciadorOrdemServico {
     List<OrdemServico> listarTodas();
     List<OrdemServico> listarOperacionais();
     MonitoramentoData getMonitoramento();
+    MetricasNegocioData getMetricasNegocio();
 }

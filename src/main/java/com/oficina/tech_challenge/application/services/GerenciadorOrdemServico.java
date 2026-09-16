@@ -1,6 +1,7 @@
 package com.oficina.tech_challenge.application.services;
 
 import com.oficina.tech_challenge.application.dtos.MonitoramentoData;
+import com.oficina.tech_challenge.application.dtos.MetricasNegocioData;
 import com.oficina.tech_challenge.application.dtos.AberturaOrdemServicoCommand;
 import com.oficina.tech_challenge.application.dtos.AtualizacaoStatusCommand;
 import com.oficina.tech_challenge.application.dtos.NotificacaoOrcamentoCommand;
@@ -15,10 +16,16 @@ import com.oficina.tech_challenge.domain.repositories.VeiculoRepository;
 import com.oficina.tech_challenge.domain.valueobjects.CpfCnpj;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.MDC;
 
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.Duration;
+import java.util.EnumMap;
+import java.util.Map;
 
 @Service
 public class GerenciadorOrdemServico implements IGerenciadorOrdemServico {
@@ -135,7 +142,7 @@ public class GerenciadorOrdemServico implements IGerenciadorOrdemServico {
     public OrdemServico registrarDiagnostico(UUID osId, String diagnostico) {
         OrdemServico os = osRepository.findById(osId)
                 .orElseThrow(() -> new IllegalArgumentException("OS não encontrada"));
-        os.registrarDiagnostico(diagnostico);
+        StatusOrdemServico anterior = os.getStatus(); os.registrarDiagnostico(diagnostico); os.registrarHistorico(anterior, "API", MDC.get("correlationId"));
         return osRepository.save(os);
     }
 
@@ -143,7 +150,7 @@ public class GerenciadorOrdemServico implements IGerenciadorOrdemServico {
     public OrdemServico gerarOrcamento(UUID osId) {
         OrdemServico os = osRepository.findById(osId)
                 .orElseThrow(() -> new IllegalArgumentException("OS não encontrada"));
-        os.gerarOrcamento();
+        StatusOrdemServico anterior = os.getStatus(); os.gerarOrcamento(); os.registrarHistorico(anterior, "API", MDC.get("correlationId"));
         return osRepository.save(os);
     }
 
@@ -151,7 +158,7 @@ public class GerenciadorOrdemServico implements IGerenciadorOrdemServico {
     public void aprovarOrcamento(UUID osId) {
         OrdemServico os = osRepository.findById(osId)
                 .orElseThrow(() -> new IllegalArgumentException("OS não encontrada"));
-        aprovarComBaixaDeEstoque(os);
+        StatusOrdemServico anterior = os.getStatus(); aprovarComBaixaDeEstoque(os); os.registrarHistorico(anterior, "API", MDC.get("correlationId"));
         osRepository.save(os);
     }
 
@@ -171,12 +178,14 @@ public class GerenciadorOrdemServico implements IGerenciadorOrdemServico {
             return notificacaoExistente.get().getOrdemServico();
         }
 
+        StatusOrdemServico anterior = os.getStatus();
         if (command.decisao() == DecisaoOrcamento.APROVADO) {
             aprovarComBaixaDeEstoque(os);
         } else {
             os.recusar();
         }
 
+        os.registrarHistorico(anterior, command.origem(), MDC.get("correlationId"));
         OrdemServico osAtualizada = osRepository.save(os);
         notificacaoRepository.save(new NotificacaoOrcamento(
                 osAtualizada,
@@ -195,11 +204,13 @@ public class GerenciadorOrdemServico implements IGerenciadorOrdemServico {
         OrdemServico os = osRepository.findById(osId)
                 .orElseThrow(() -> new IllegalArgumentException("OS não encontrada"));
 
+        StatusOrdemServico anterior = os.getStatus();
         if (command.novoStatus() == StatusOrdemServico.EXECUCAO) {
             aprovarComBaixaDeEstoque(os);
         } else {
             os.atualizarStatus(command.novoStatus());
         }
+        os.registrarHistorico(anterior, command.origem(), MDC.get("correlationId"));
         return osRepository.save(os);
     }
 
@@ -207,7 +218,7 @@ public class GerenciadorOrdemServico implements IGerenciadorOrdemServico {
     public void finalizarOS(UUID osId) {
         OrdemServico os = osRepository.findById(osId)
                 .orElseThrow(() -> new IllegalArgumentException("OS não encontrada"));
-        os.finalizar();
+        StatusOrdemServico anterior = os.getStatus(); os.finalizar(); os.registrarHistorico(anterior, "API", MDC.get("correlationId"));
         osRepository.save(os);
     }
 
@@ -215,7 +226,7 @@ public class GerenciadorOrdemServico implements IGerenciadorOrdemServico {
     public void entregarOS(UUID osId) {
         OrdemServico os = osRepository.findById(osId)
                 .orElseThrow(() -> new IllegalArgumentException("OS não encontrada"));
-        os.entregar();
+        StatusOrdemServico anterior = os.getStatus(); os.entregar(); os.registrarHistorico(anterior, "API", MDC.get("correlationId"));
         osRepository.save(os);
     }
 
@@ -253,6 +264,32 @@ public class GerenciadorOrdemServico implements IGerenciadorOrdemServico {
                 .orElse(0.0);
 
         return new MonitoramentoData(tempoMedio, (int) totalFinalizadas);
+    }
+
+    @Transactional(readOnly = true)
+    public MetricasNegocioData getMetricasNegocio() {
+        LocalDate hoje = LocalDate.now();
+        List<OrdemServico> ordens = osRepository.findAll();
+        long volume = ordens.stream().filter(o -> o.getDataCriacao().toLocalDate().equals(hoje)).count();
+        Map<StatusOrdemServico, Long> minutos = new EnumMap<>(StatusOrdemServico.class);
+        Map<StatusOrdemServico, Long> ocorrencias = new EnumMap<>(StatusOrdemServico.class);
+        for (OrdemServico os : ordens) {
+            List<HistoricoStatusOrdemServico> historico = os.getHistoricoStatus().stream()
+                    .sorted(java.util.Comparator.comparing(HistoricoStatusOrdemServico::getDataHora)).toList();
+            for (int i = 0; i < historico.size(); i++) {
+                HistoricoStatusOrdemServico atual = historico.get(i);
+                LocalDateTime fim = i + 1 < historico.size() ? historico.get(i + 1).getDataHora() : LocalDateTime.now();
+                if (atual.getNovoStatus() == StatusOrdemServico.DIAGNOSTICO || atual.getNovoStatus() == StatusOrdemServico.EXECUCAO || atual.getNovoStatus() == StatusOrdemServico.FINALIZADA) {
+                    minutos.merge(atual.getNovoStatus(), Duration.between(atual.getDataHora(), fim).toMinutes(), Long::sum);
+                    ocorrencias.merge(atual.getNovoStatus(), 1L, Long::sum);
+                }
+            }
+        }
+        Map<String, Double> medias = new java.util.LinkedHashMap<>();
+        for (StatusOrdemServico status : List.of(StatusOrdemServico.DIAGNOSTICO, StatusOrdemServico.EXECUCAO, StatusOrdemServico.FINALIZADA)) {
+            medias.put(status.name(), ocorrencias.containsKey(status) ? (double) minutos.get(status) / ocorrencias.get(status) : 0.0);
+        }
+        return new MetricasNegocioData(hoje, volume, medias);
     }
 
     private void adicionarItensNaOrdem(OrdemServico os, List<AberturaOrdemServicoCommand.ServicoData> servicos,

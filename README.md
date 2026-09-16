@@ -1,6 +1,8 @@
 # Oficina Tech Challenge - Sistema de Oficina
 
-Backend para gestao operacional de uma oficina mecanica, desenvolvido para o Tech Challenge FIAP 14SOAT. O projeto evolui o MVP da Fase 1 para a Fase 2, com abertura completa de ordem de servico, consulta publica de status, notificacao externa de aprovacao/recusa de orcamento, monitoramento, containerizacao, Kubernetes, Terraform e CI/CD.
+Backend para gestao operacional de uma oficina mecanica, desenvolvido para o Tech Challenge FIAP 14SOAT. O projeto evolui o MVP da Fase 1 para a Fase 2 e contém a fundação local e gratuita da Fase 3: migrations, métricas Prometheus, correlação de requisições e CI/CD segregado por ambiente.
+
+> A estratégia sem custo e os limites explícitos da demonstração local estão em [docs/fase3-sem-custos.md](docs/fase3-sem-custos.md). Nenhum recurso cloud pago é provisionado por este repositório.
 
 ## Proposito
 
@@ -142,15 +144,25 @@ docker compose down -v
 
 ## Variaveis de ambiente
 
-O `.env.example` contem valores de desenvolvimento:
+O `.env.example` contém apenas placeholders que devem ser substituídos localmente:
 
 ```env
-SECURITY_JWT_SECRET=64656661756c747365637265746b65796d75737462657374726f6e6765727468616e74686973313233343536
-EXTERNAL_WEBHOOK_SECRET=dev-webhook-secret-change-me
+SECURITY_JWT_SECRET=substitua-por-um-segredo-local-com-no-minimo-32-caracteres
+EXTERNAL_WEBHOOK_SECRET=substitua-por-um-segredo-local-para-webhooks
+APP_ENVIRONMENT=local
 JAVA_OPTS=-XX:+UseG1GC -XX:MaxRAMPercentage=75.0
 ```
 
-Em ambientes reais, altere `SECURITY_JWT_SECRET` e `EXTERNAL_WEBHOOK_SECRET`.
+Os valores no arquivo de exemplo são apenas placeholders. Defina secrets locais fortes antes de subir a aplicação; eles não devem ser versionados.
+
+## Observabilidade local
+
+- Health: `GET /actuator/health`
+- Métricas Prometheus: `GET /actuator/prometheus`
+- Correlação: envie `X-Correlation-Id`; a API o devolve na resposta. Se ausente, a API gera um UUID.
+- Logs: saída JSON com serviço, ambiente e `correlationId`; traces OTLP são enviados ao endpoint configurado em `OTEL_EXPORTER_OTLP_ENDPOINT`.
+
+As métricas podem ser coletadas por Prometheus/Grafana locais, sem conta ou custo. O plano completo e a separação futura dos quatro repositórios estão em `docs/fase3-sem-custos.md`.
 
 ## Autenticacao
 

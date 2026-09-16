@@ -1,6 +1,7 @@
 package com.oficina.tech_challenge.presentation.controllers;
 
 import com.oficina.tech_challenge.application.dtos.MonitoramentoData;
+import com.oficina.tech_challenge.application.dtos.MetricasNegocioData;
 import com.oficina.tech_challenge.application.dtos.AberturaOrdemServicoCommand;
 import com.oficina.tech_challenge.application.dtos.AtualizacaoStatusCommand;
 import com.oficina.tech_challenge.application.dtos.NotificacaoOrcamentoCommand;
@@ -14,6 +15,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.Authentication;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -65,9 +67,10 @@ public class OrdemServicoController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    /** Endpoint público para o cliente acompanhar suas OS pelo CPF/CNPJ */
     @GetMapping("/cliente/{cpfCnpj}")
-    public ResponseEntity<List<OrdemServicoResponse>> buscarPorCliente(@PathVariable String cpfCnpj) {
+    public ResponseEntity<List<OrdemServicoResponse>> buscarPorCliente(@PathVariable String cpfCnpj, Authentication authentication) {
+        boolean cliente = authentication.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_CLIENTE"));
+        if (cliente && !cpfCnpj.replaceAll("\\D", "").equals(authentication.getPrincipal())) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         return ResponseEntity.ok(gerenciadorOS.buscarPorCpfCnpj(cpfCnpj).stream().map(OrdemServicoResponse::from).toList());
     }
 
@@ -127,6 +130,9 @@ public class OrdemServicoController {
     public ResponseEntity<MonitoramentoData> listarMonitoramento() {
         return ResponseEntity.ok(gerenciadorOS.getMonitoramento());
     }
+
+    @GetMapping("/metricas-negocio")
+    public ResponseEntity<MetricasNegocioData> metricasNegocio() { return ResponseEntity.ok(gerenciadorOS.getMetricasNegocio()); }
 
     public static class ItensOSRequest {
         private List<UUID> servicoIds;

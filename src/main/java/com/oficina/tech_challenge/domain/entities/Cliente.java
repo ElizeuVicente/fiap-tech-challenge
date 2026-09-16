@@ -28,6 +28,9 @@ public class Cliente {
     private String email;
     private String telefone;
 
+    @Enumerated(EnumType.STRING)
+    private StatusCliente status = StatusCliente.ATIVO;
+
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
     @JoinColumn(name = "cliente_id")
     private List<Veiculo> veiculos = new ArrayList<>();
@@ -39,6 +42,7 @@ public class Cliente {
         this.cpfCnpj = cpfCnpj;
         this.email = email;
         this.telefone = telefone;
+        this.status = StatusCliente.ATIVO;
     }
 
     private void validateNome(String nome) {
