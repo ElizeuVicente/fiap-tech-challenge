@@ -37,8 +37,12 @@ class OrdemServicoTest {
     @Test
     void deveMudarStatusParaDiagnosticoAoRegistrarDiagnostico() {
         OrdemServico os = new OrdemServico(cliente, veiculo);
+        StatusOrdemServico anterior = os.getStatus();
         os.registrarDiagnostico("Teste");
+        os.registrarHistorico(anterior, "TESTE", "corr-1");
         assertEquals(StatusOrdemServico.DIAGNOSTICO, os.getStatus());
+        assertEquals(2, os.getHistoricoStatus().size());
+        assertEquals("corr-1", os.getHistoricoStatus().get(1).getCorrelationId());
     }
 
     @Test

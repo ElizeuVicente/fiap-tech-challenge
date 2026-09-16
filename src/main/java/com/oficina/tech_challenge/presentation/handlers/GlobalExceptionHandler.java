@@ -14,6 +14,7 @@ import org.springframework.web.HttpRequestMethodNotSupportedException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import io.micrometer.core.instrument.Metrics;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -60,6 +61,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGeneric(Exception ex) {
         logger.error("Erro não tratado: ", ex);
+        Metrics.counter("oficina_os_falhas_total", "tipo", ex.getClass().getSimpleName()).increment();
         return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Erro interno do servidor");
     }
 
