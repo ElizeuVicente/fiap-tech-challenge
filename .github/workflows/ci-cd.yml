@@ -5,6 +5,12 @@ on:
   push:
     branches: [homolog, main]
   workflow_dispatch:
+    inputs:
+      bootstrap_without_gateway:
+        description: 'Somente primeiro deploy: subir API antes de criar o API Gateway'
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   test:
@@ -92,6 +98,7 @@ jobs:
           kubectl kustomize "k8s-cloud/${DEPLOY_ENV}" | sed "s|oficina-fase3-api:placeholder|${ECR_REPOSITORY_URL}:${GITHUB_SHA}|g" | kubectl apply -f -
           kubectl -n "oficina-${DEPLOY_ENV}" rollout status deployment/oficina-api --timeout=300s
       - name: Smoke test por API Gateway
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.bootstrap_without_gateway) }}
         env:
           GATEWAY_URL: ${{ vars.GATEWAY_URL }}
         run: |
