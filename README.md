@@ -346,7 +346,7 @@ curl -X POST http://localhost:8080/api/ordens-servico/$OS_ID/orcamento/notificac
   }'
 ```
 
-A collection da Fase 2 existe apenas na pasta local `docs/`, ignorada pelo Git. Uma collection pública e atualizada da Fase 3 ainda precisa ser publicada.
+A collection da Fase 2 permanece apenas na pasta local `docs/`, ignorada pelo Git. A [collection pública da Fase 3](postman/oficina-fase3.postman_collection.json) está versionada em `postman/` e inclui as variáveis de ambiente sem credenciais reais.
 
 ## Testes automatizados
 
