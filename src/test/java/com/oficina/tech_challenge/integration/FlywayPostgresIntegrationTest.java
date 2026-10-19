@@ -22,4 +22,22 @@ class FlywayPostgresIntegrationTest {
             assertEquals(1, result.getInt(1));
         }
     }
+
+    @Test
+    void isolatesHomologAndProductionSchemas() throws Exception {
+        for (String schema : java.util.List.of("oficina_homolog", "oficina_prod")) {
+            Flyway.configure().dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
+                    .schemas(schema).load().migrate();
+        }
+        try (var connection = java.sql.DriverManager.getConnection(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+             var statement = connection.prepareStatement("""
+                     select count(*) from information_schema.tables
+                     where table_schema in ('oficina_homolog', 'oficina_prod')
+                       and table_name = 'historico_status_ordem_servico'
+                     """)) {
+            var result = statement.executeQuery();
+            result.next();
+            assertEquals(2, result.getInt(1));
+        }
+    }
 }

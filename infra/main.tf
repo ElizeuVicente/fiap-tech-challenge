@@ -13,7 +13,7 @@ resource "kubernetes_config_map" "app" {
   data = {
     SPRING_DATASOURCE_URL         = "jdbc:postgresql://oficina-postgres:5432/oficina"
     SPRING_DATASOURCE_USERNAME    = "user"
-    SPRING_JPA_HIBERNATE_DDL_AUTO = "update"
+    SPRING_JPA_HIBERNATE_DDL_AUTO = "validate"
     SERVER_PORT                   = "8080"
     JAVA_OPTS                     = "-XX:+UseG1GC -XX:MaxRAMPercentage=75.0"
   }

@@ -13,26 +13,16 @@ Este diretório provisiona os recursos Kubernetes necessários para a Fase 2 em 
 
 ```bash
 terraform init
-terraform plan \
-  -var='jwt_secret=64656661756c747365637265746b65796d75737462657374726f6e6765727468616e74686973313233343536' \
-  -var='webhook_secret=dev-webhook-secret-change-me' \
-  -var='postgres_password=password'
-terraform apply \
-  -var='jwt_secret=64656661756c747365637265746b65796d75737462657374726f6e6765727468616e74686973313233343536' \
-  -var='webhook_secret=dev-webhook-secret-change-me' \
-  -var='postgres_password=password'
+terraform plan
+terraform apply
 ```
 
 Para uma imagem publicada:
 
 ```bash
-terraform apply \
-  -var='app_image=ghcr.io/seu-org/seu-repo/oficina-tech-challenge:latest' \
-  -var='jwt_secret=...' \
-  -var='webhook_secret=...' \
-  -var='postgres_password=...'
+terraform apply -var='app_image=ghcr.io/seu-org/seu-repo/oficina-tech-challenge:tag-imutavel'
 ```
 
 ## Observações
 
-Secrets do Terraform ficam no state. Para produção, armazene o state em backend remoto com criptografia e controle de acesso. Para o escopo acadêmico, os valores acima são demonstrativos e devem ser trocados antes de uma demonstração pública.
+Forneça `TF_VAR_jwt_secret`, `TF_VAR_webhook_secret` e `TF_VAR_postgres_password` pelo ambiente local ou por um `terraform.tfvars` **não versionado**; evite segredos na linha de comando e no histórico do shell. Secrets do Terraform ainda ficam no state. Este Terraform é apenas para laboratório Kubernetes local; o deploy cloud da Fase 3 deve usar o repositório de infraestrutura AWS e state protegido.

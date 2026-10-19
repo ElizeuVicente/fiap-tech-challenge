@@ -1,0 +1,4 @@
+namespace: oficina-prod
+resources:
+  - ../base
+  - namespace.yaml

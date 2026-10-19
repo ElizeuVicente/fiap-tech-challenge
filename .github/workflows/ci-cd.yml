@@ -1,108 +1,107 @@
 name: CI/CD
 
 on:
-  push:
-    branches:
-      - homolog
-      - main
   pull_request:
+  push:
+    branches: [homolog, main]
   workflow_dispatch:
 
 jobs:
-  build-test:
-    name: Build and test
+  test:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: '17'
           cache: maven
-
-      - name: Run tests
-        run: ./mvnw verify
-
-  docker:
-    name: Build Docker image
-    runs-on: ubuntu-latest
-    needs: build-test
-    if: github.event_name == 'push'
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set image name
-        run: echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY,,}/oficina-tech-challenge" >> "$GITHUB_ENV"
-
-      - name: Login to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: |
-            ${{ env.IMAGE_NAME }}:${{ github.sha }}
-            ${{ env.IMAGE_NAME }}:latest
-
-  deploy-homolog:
-    name: Deploy to Kubernetes
-    runs-on: ubuntu-latest
-    needs: docker
-    if: github.ref == 'refs/heads/homolog'
-    environment: homolog
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set image name
-        run: echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY,,}/oficina-tech-challenge" >> "$GITHUB_ENV"
-
-      - name: Configure kubeconfig
-        env:
-          KUBE_CONFIG_B64: ${{ secrets.KUBE_CONFIG }}
+      - run: ./mvnw verify
+      - uses: azure/setup-kubectl@v4
+      - name: Validar manifests cloud
         run: |
-          if [ -z "$KUBE_CONFIG_B64" ]; then
-            echo "KUBE_CONFIG secret is not configured; skipping deploy."
-            echo "skip_deploy=true" >> "$GITHUB_ENV"
-            exit 0
+          kubectl kustomize k8s-cloud/homolog >/dev/null
+          kubectl kustomize k8s-cloud/prod >/dev/null
+
+  deploy:
+    needs: test
+    if: github.event_name != 'pull_request' && vars.ENABLE_CLOUD_DEPLOY == 'true'
+    runs-on: [self-hosted, linux, oficina-deploy]
+    environment: ${{ github.ref_name == 'main' && 'prod' || 'homolog' }}
+    concurrency:
+      group: oficina-api-${{ github.ref_name }}
+      cancel-in-progress: false
+    env:
+      DEPLOY_ENV: ${{ github.ref_name == 'main' && 'prod' || 'homolog' }}
+      EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
+      ECR_REPOSITORY_URL: ${{ vars.ECR_REPOSITORY_URL }}
+      DB_ENDPOINT: ${{ vars.DB_ENDPOINT }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      SECURITY_JWT_SECRET: ${{ secrets.SECURITY_JWT_SECRET }}
+      EXTERNAL_WEBHOOK_SECRET: ${{ secrets.EXTERNAL_WEBHOOK_SECRET }}
+      BOOTSTRAP_ADMIN_USERNAME: ${{ secrets.BOOTSTRAP_ADMIN_USERNAME }}
+      BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.BOOTSTRAP_ADMIN_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exigir configuração completa
+        run: |
+          for name in EKS_CLUSTER_NAME ECR_REPOSITORY_URL DB_ENDPOINT DB_PASSWORD SECURITY_JWT_SECRET EXTERNAL_WEBHOOK_SECRET; do
+            if [ -z "${!name}" ]; then echo "Variável obrigatória ausente: $name"; exit 1; fi
+          done
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: us-east-1
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+      - name: Confirmar sessão temporária
+        run: aws sts get-caller-identity --query Arn --output text >/dev/null
+      - name: Construir e enviar imagem imutável
+        run: |
+          registry="${ECR_REPOSITORY_URL%/*}"
+          aws ecr get-login-password | docker login --username AWS --password-stdin "$registry"
+          if ! aws ecr describe-images --repository-name "${ECR_REPOSITORY_URL##*/}" --image-ids "imageTag=${GITHUB_SHA}" >/dev/null 2>&1; then
+            docker build -t "${ECR_REPOSITORY_URL}:${GITHUB_SHA}" .
+            docker push "${ECR_REPOSITORY_URL}:${GITHUB_SHA}"
           fi
-          mkdir -p "$HOME/.kube"
-          echo "$KUBE_CONFIG_B64" | base64 -d > "$HOME/.kube/config"
-
-      - name: Update image
-        if: env.skip_deploy != 'true'
+      - name: Aplicar namespace e configuração
         run: |
-          sed -i "s|oficina-tech-challenge:latest|${{ env.IMAGE_NAME }}:${{ github.sha }}|g" k8s/40-deployment.yaml
-
-      - name: Apply manifests
-        if: env.skip_deploy != 'true'
-        run: kubectl apply -f k8s/
-
-      - name: Wait for rollout
-        if: env.skip_deploy != 'true'
-        run: kubectl rollout status deployment/oficina-api -n oficina --timeout=180s
-
-  deploy-prod:
-    name: Deploy production
-    runs-on: ubuntu-latest
-    needs: docker
-    if: github.ref == 'refs/heads/main'
-    environment: prod
-    steps:
-      - name: Production deployment guardrail
+          aws eks update-kubeconfig --name "$EKS_CLUSTER_NAME"
+          kubectl apply -f "k8s-cloud/${DEPLOY_ENV}/namespace.yaml"
+          namespace="oficina-${DEPLOY_ENV}"
+          context_path=""
+          if [ "$DEPLOY_ENV" = homolog ]; then context_path=/homolog; fi
+          kubectl -n "$namespace" create configmap oficina-cloud-config \
+            --from-literal="APP_ENVIRONMENT=${DEPLOY_ENV}" \
+            --from-literal="SERVER_SERVLET_CONTEXT_PATH=${context_path}" \
+            --from-literal="SPRING_DATASOURCE_URL=jdbc:postgresql://${DB_ENDPOINT}:5432/oficina?currentSchema=oficina_${DEPLOY_ENV}" \
+            --from-literal="SPRING_DATASOURCE_USERNAME=oficina" \
+            --from-literal="SPRING_FLYWAY_SCHEMAS=oficina_${DEPLOY_ENV}" \
+            --from-literal="SPRING_JPA_HIBERNATE_DDL_AUTO=validate" \
+            --from-literal="OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo.oficina-observability.svc.cluster.local:4318/v1/traces" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n "$namespace" create secret generic oficina-cloud-secret \
+            --from-literal="SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD}" \
+            --from-literal="SECURITY_JWT_SECRET=${SECURITY_JWT_SECRET}" \
+            --from-literal="EXTERNAL_WEBHOOK_SECRET=${EXTERNAL_WEBHOOK_SECRET}" \
+            --from-literal="BOOTSTRAP_ADMIN_USERNAME=${BOOTSTRAP_ADMIN_USERNAME}" \
+            --from-literal="BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+      - name: Deploy e rollout
         run: |
-          echo "Configure KUBE_CONFIG and protection rules in the GitHub 'prod' environment before enabling a production deployment."
-          echo "This repository deliberately does not provision or deploy paid cloud resources."
+          kubectl kustomize "k8s-cloud/${DEPLOY_ENV}" | sed "s|oficina-fase3-api:placeholder|${ECR_REPOSITORY_URL}:${GITHUB_SHA}|g" | kubectl apply -f -
+          kubectl -n "oficina-${DEPLOY_ENV}" rollout status deployment/oficina-api --timeout=300s
+      - name: Smoke test por API Gateway
+        env:
+          GATEWAY_URL: ${{ vars.GATEWAY_URL }}
+        run: |
+          test -n "$GATEWAY_URL" || { echo 'GATEWAY_URL obrigatório'; exit 1; }
+          test -n "$BOOTSTRAP_ADMIN_USERNAME" && test -n "$BOOTSTRAP_ADMIN_PASSWORD" || { echo 'Credenciais smoke ADMIN obrigatórias'; exit 1; }
+          prefix=""
+          if [ "$DEPLOY_ENV" = homolog ]; then prefix=/homolog; fi
+          status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$GATEWAY_URL$prefix/api/ordens-servico/monitoramento")
+          test "$status" = 401 || { echo "Gateway deveria negar requisição anônima: HTTP $status"; exit 1; }
+          body=$(jq -nc --arg username "$BOOTSTRAP_ADMIN_USERNAME" --arg password "$BOOTSTRAP_ADMIN_PASSWORD" '{username:$username,password:$password}')
+          token=$(curl -fsS --max-time 20 -H 'Content-Type: application/json' -d "$body" "$GATEWAY_URL$prefix/api/auth/login")
+          test -n "$token"
+          curl -fsS --max-time 20 -H "Authorization: Bearer $token" "$GATEWAY_URL$prefix/api/ordens-servico/monitoramento" >/dev/null

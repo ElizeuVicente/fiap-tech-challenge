@@ -11,10 +11,13 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.server.ResponseStatusException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import io.micrometer.core.instrument.Metrics;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.dao.DataAccessException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -58,10 +61,24 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.METHOD_NOT_ALLOWED, "Método HTTP não suportado: " + ex.getMethod());
     }
 
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<Map<String, Object>> handleResponseStatus(ResponseStatusException ex, HttpServletRequest request) {
+        if (request.getRequestURI().contains("/orcamento/notificacoes") && ex.getStatusCode().value() == 401) {
+            Metrics.counter("oficina_integracao_falhas_total", "integracao", "webhook").increment();
+        }
+        HttpStatus status = HttpStatus.valueOf(ex.getStatusCode().value());
+        return buildResponse(status, ex.getReason() == null ? status.getReasonPhrase() : ex.getReason());
+    }
+
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<Map<String, Object>> handleGeneric(Exception ex) {
-        logger.error("Erro não tratado: ", ex);
-        Metrics.counter("oficina_os_falhas_total", "tipo", ex.getClass().getSimpleName()).increment();
+    public ResponseEntity<Map<String, Object>> handleGeneric(Exception ex, HttpServletRequest request) {
+        logger.error("Erro não tratado: tipo={}", ex.getClass().getSimpleName());
+        if (ex instanceof DataAccessException) {
+            Metrics.counter("oficina_integracao_falhas_total", "integracao", "postgres").increment();
+        }
+        if (request.getRequestURI().contains("/ordens-servico")) {
+            Metrics.counter("oficina_os_falhas_total", "tipo", ex.getClass().getSimpleName()).increment();
+        }
         return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Erro interno do servidor");
     }
 

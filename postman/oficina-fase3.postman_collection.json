@@ -1,0 +1,64 @@
+{
+  "info": {
+    "name": "Oficina — Fase 3 (homolog/prod)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Selecione baseUrl do API Gateway somente na janela AWS. Nenhuma chave ou CPF real é versionado."
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "prefix", "value": "" },
+    { "key": "cpfTeste", "value": "" },
+    { "key": "tokenCliente", "value": "" },
+    { "key": "tokenAdmin", "value": "" },
+    { "key": "adminUsername", "value": "" },
+    { "key": "adminPassword", "value": "" },
+    { "key": "osId", "value": "" },
+    { "key": "clienteId", "value": "" },
+    { "key": "placa", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Autenticação CPF — Lambda",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\"cpf\":\"{{cpfTeste}}\"}" },
+        "url": "{{baseUrl}}{{prefix}}/auth/cpf"
+      },
+      "event": [{ "listen": "test", "script": { "exec": ["if (pm.response.code === 200) pm.collectionVariables.set('tokenCliente', pm.response.json().token);"] } }]
+    },
+    {
+      "name": "Login administrativo",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\"username\":\"{{adminUsername}}\",\"password\":\"{{adminPassword}}\"}" },
+        "url": "{{baseUrl}}{{prefix}}/api/auth/login"
+      },
+      "event": [{ "listen": "test", "script": { "exec": ["if (pm.response.code === 200) pm.collectionVariables.set('tokenAdmin', pm.response.text());"] } }]
+    },
+    {
+      "name": "Abrir OS — ADMIN",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+        "body": { "mode": "raw", "raw": "{\"clienteId\":\"{{clienteId}}\",\"placa\":\"{{placa}}\"}" },
+        "url": "{{baseUrl}}{{prefix}}/api/ordens-servico"
+      },
+      "event": [{ "listen": "test", "script": { "exec": ["if (pm.response.code === 201) pm.collectionVariables.set('osId', pm.response.json().id);"] } }]
+    },
+    {
+      "name": "Consultar minha OS — CLIENTE",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{tokenCliente}}" }],
+        "url": "{{baseUrl}}{{prefix}}/api/ordens-servico/{{osId}}/status"
+      }
+    },
+    {
+      "name": "Negar OS sem token — 401",
+      "request": { "method": "GET", "url": "{{baseUrl}}{{prefix}}/api/ordens-servico/{{osId}}/status" },
+      "event": [{ "listen": "test", "script": { "exec": ["pm.test('401', () => pm.response.to.have.status(401));"] } }]
+    }
+  ]
+}

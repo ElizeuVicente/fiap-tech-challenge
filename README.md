@@ -1,8 +1,8 @@
 # Oficina Tech Challenge - Sistema de Oficina
 
-Backend para gestao operacional de uma oficina mecanica, desenvolvido para o Tech Challenge FIAP 14SOAT. O projeto evolui o MVP da Fase 1 para a Fase 2 e contém a fundação local e gratuita da Fase 3: migrations, métricas Prometheus, correlação de requisições e CI/CD segregado por ambiente.
+Backend para gestao operacional de uma oficina mecanica, desenvolvido para o Tech Challenge FIAP 14SOAT. O projeto evolui o MVP das Fases 1 e 2 e prepara a Fase 3 com migrations, métricas Prometheus, correlação de requisições e segurança por papel/CPF. A implantação cloud ainda está em desenvolvimento nos quatro repositórios.
 
-> A estratégia sem custo e os limites explícitos da demonstração local estão em [docs/fase3-sem-custos.md](docs/fase3-sem-custos.md). Nenhum recurso cloud pago é provisionado por este repositório.
+> Este repositório ainda inclui laboratório local de Docker/Kubernetes. Não confunda esse laboratório com a implantação gerenciada exigida na Fase 3.
 
 ## Proposito
 
@@ -38,12 +38,12 @@ Fluxo principal:
 Cliente/API -> Controller -> Application Service -> Domain Entity/Value Object -> Repository -> PostgreSQL
 ```
 
-Ponto arquitetural importante: as entidades de dominio ainda usam anotacoes JPA. Em Clean Architecture/Hexagonal estrita, dominio e modelo de persistencia seriam separados. Nesta entrega academica, a decisao foi manter esse acoplamento controlado para preservar escopo e reduzir risco, com a divida documentada em `docs/HANDOFF.md` e `docs/registro-alteracoes.md`.
+Ponto arquitetural importante: as entidades de dominio ainda usam anotacoes JPA. Em Clean Architecture/Hexagonal estrita, dominio e modelo de persistencia seriam separados. Nesta entrega academica, a decisao foi manter esse acoplamento controlado para preservar escopo e reduzir risco; a separação permanece dívida técnica.
 
 ## Funcionalidades
 
 - Autenticacao JWT para rotas administrativas.
-- Consulta publica de OS por cliente.
+- Consulta de OS pelo cliente autenticado via CPF, restrita ao próprio documento.
 - Abertura completa de OS com cliente, veiculo, servicos e pecas no mesmo payload.
 - Fluxo de status protegido pela entidade `OrdemServico`.
 - Geracao de orcamento e baixa de estoque ao aprovar.
@@ -162,24 +162,26 @@ Os valores no arquivo de exemplo são apenas placeholders. Defina secrets locais
 - Correlação: envie `X-Correlation-Id`; a API o devolve na resposta. Se ausente, a API gera um UUID.
 - Logs: saída JSON com serviço, ambiente e `correlationId`; traces OTLP são enviados ao endpoint configurado em `OTEL_EXPORTER_OTLP_ENDPOINT`.
 
-As métricas podem ser coletadas por Prometheus/Grafana locais, sem conta ou custo. O plano completo e a separação futura dos quatro repositórios estão em `docs/fase3-sem-custos.md`.
+As métricas podem ser coletadas por Prometheus/Grafana locais. Esta configuração não representa o deploy em nuvem exigido na Fase 3.
 
 ## Autenticacao
 
-As rotas administrativas exigem JWT. Rotas publicas:
+As rotas administrativas exigem JWT com papel `ADMIN`. O JWT de CPF com papel `CLIENTE` permite consultar apenas as próprias OS por CPF, ID e status. Rotas públicas:
 
-- `POST /api/auth/**`
-- `GET /api/ordens-servico/cliente/**`
+- `POST /api/auth/login`
 - `POST /api/ordens-servico/{id}/orcamento/notificacoes`
 - Swagger/OpenAPI
 - `/actuator/health`
 
-Criar usuario:
+Para criar o primeiro administrador, configure `BOOTSTRAP_ADMIN_USERNAME` e `BOOTSTRAP_ADMIN_PASSWORD` no `.env` local (senha com no mínimo 12 caracteres) antes da primeira inicialização. O bootstrap só executa se a tabela de usuários estiver vazia; remova as duas variáveis após a criação inicial. Não publique esses valores. Administradores autenticados podem registrar outros administradores em `POST /api/auth/register`; a rota não é mais pública.
+
+Criar outro administrador (com token de administrador):
 
 ```bash
 curl -X POST http://localhost:8080/api/auth/register \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"senha123456"}'
+  -d '{"username":"outro-admin","password":"senha-forte-individual"}'
 ```
 
 Fazer login:
@@ -271,16 +273,12 @@ GET    /api/ordens-servico/monitoramento
 ./start.sh
 ```
 
-2. Crie usuario e obtenha token:
+2. Configure o bootstrap do primeiro administrador no `.env`, reinicie a aplicação e obtenha o token:
 
 ```bash
-curl -X POST http://localhost:8080/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"senha123456"}'
-
 TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"senha123456"}' \
+  -d '{"username":"admin","password":"SUA_SENHA_FORTE"}' \
   | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
 ```
 
@@ -348,7 +346,7 @@ curl -X POST http://localhost:8080/api/ordens-servico/$OS_ID/orcamento/notificac
   }'
 ```
 
-Tambem ha uma collection pronta em `docs/postman/oficina-tech-challenge-fase2.postman_collection.json`.
+A collection da Fase 2 existe apenas na pasta local `docs/`, ignorada pelo Git. Uma collection pública e atualizada da Fase 3 ainda precisa ser publicada.
 
 ## Testes automatizados
 
@@ -370,7 +368,7 @@ Relatorio JaCoCo:
 xdg-open target/site/jacoco/index.html
 ```
 
-Observacao: os testes de integracao ainda usam H2. A evolucao para Testcontainers com PostgreSQL real esta registrada como melhoria recomendada no handoff.
+Os testes de regras e endpoints usam H2; `FlywayPostgresIntegrationTest` também executa migrations contra PostgreSQL 15 real via Testcontainers 1.21.4 quando Docker está disponível. O build de CI deve manter Docker ativo para que essa prova não seja ignorada.
 
 ## Docker
 
@@ -396,9 +394,13 @@ docker build -t oficina-tech-challenge:test .
 
 Os manifests ficam em `k8s/`.
 
-Aplicar em um cluster ja configurado no `kubectl`:
+Crie antes um arquivo local `.env.k8s` (ignorado pelo Git) com `POSTGRES_PASSWORD`, `SPRING_DATASOURCE_PASSWORD`, `SECURITY_JWT_SECRET`, `EXTERNAL_WEBHOOK_SECRET` e, para o primeiro start, `BOOTSTRAP_ADMIN_USERNAME`/`BOOTSTRAP_ADMIN_PASSWORD`. A senha do PostgreSQL deve ser igual nas duas primeiras variáveis. Não existe mais Secret YAML com valores fixos no repositório.
+
+Aplicar em um cluster local ja configurado no `kubectl`:
 
 ```bash
+kubectl apply -f k8s/00-namespace.yaml
+kubectl create secret generic oficina-secret --from-env-file=.env.k8s -n oficina
 kubectl apply -f k8s/
 kubectl get pods -n oficina
 kubectl get svc -n oficina
@@ -436,23 +438,27 @@ terraform apply \
   -var='postgres_password=troque-esta-senha'
 ```
 
-Para AWS, voce precisaria de uma conta AWS apenas se decidir criar ou usar um cluster EKS. Este repositorio, neste momento, entrega recursos Kubernetes genericos.
+Para AWS, os manifests de `k8s-cloud/` separam `oficina-homolog` e `oficina-prod`; `k8s/` e `infra/` continuam exclusivamente locais. O deploy cloud espera EKS, ECR, ALB, RDS e gateway dos três repositórios de infraestrutura. Nada foi aplicado na AWS nesta etapa.
 
 ## CI/CD
 
-O workflow `.github/workflows/ci-cd.yml` executa:
-
-- checkout;
-- setup Java 17;
-- `./mvnw verify`;
-- build da imagem Docker;
-- push para GHCR em pushes;
-- deploy em Kubernetes quando `KUBE_CONFIG` estiver configurado como secret base64.
+O workflow `.github/workflows/ci-cd.yml` executa `./mvnw verify` e valida os overlays em PR. O job cloud só é habilitado por `ENABLE_CLOUD_DEPLOY=true`: usa credenciais temporárias no GitHub Environment `homolog`/`prod`, publica imagem por SHA no ECR, injeta configuração/segredos, faz rollout no EKS e testa a negativa de acesso anônimo pelo gateway. O deploy usa runner próprio rotulado `oficina-deploy`, localizado em um CIDR permitido pelo endpoint privado/restrito do EKS; runners públicos do GitHub não têm IP fixo. Configure proteção de `main` e aprovação do environment `prod` antes de habilitar. A variável `GATEWAY_URL` aponta para a URL futura, **ainda inativa**.
 
 ## Documentacao complementar
 
 - Infraestrutura: `infra/README.md`
 - Analise de vulnerabilidades: `ANALISE_VULNERABILIDADES.md`
+- [Arquitetura AWS da Fase 3](architecture/fase3-aws.md), com diagramas, RFC, ADR e modelo relacional.
+- [Collection Postman da Fase 3](postman/oficina-fase3.postman_collection.json), com `baseUrl` e `prefix` por ambiente; não contém segredos.
+- Swagger local: `http://localhost:8080/swagger-ui.html`; na nuvem, acesse por port-forward ao serviço interno quando os recursos estiverem ativos.
+
+```mermaid
+flowchart LR
+  G[API Gateway] --> LB[ALB interno]
+  LB --> API[Spring Boot no EKS]
+  API --> DB[(RDS PostgreSQL)]
+  API --> O[Prometheus / Loki / Tempo]
+```
 
   
 ## Troubleshooting

@@ -8,6 +8,7 @@ import com.oficina.tech_challenge.application.dtos.NotificacaoOrcamentoCommand;
 import com.oficina.tech_challenge.application.interfaces.IGerenciadorOrdemServico;
 import com.oficina.tech_challenge.domain.entities.DecisaoOrcamento;
 import com.oficina.tech_challenge.domain.entities.StatusOrdemServico;
+import com.oficina.tech_challenge.domain.entities.OrdemServico;
 import com.oficina.tech_challenge.presentation.dtos.OrdemServicoResponse;
 import com.oficina.tech_challenge.presentation.dtos.OrdemServicoStatusResponse;
 import org.springframework.beans.factory.annotation.Value;
@@ -54,24 +55,42 @@ public class OrdemServicoController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<OrdemServicoResponse> buscar(@PathVariable UUID id) {
+    public ResponseEntity<OrdemServicoResponse> buscar(@PathVariable UUID id, Authentication authentication) {
         return gerenciadorOS.buscarPorId(id)
-                .map(os -> ResponseEntity.ok(OrdemServicoResponse.from(os)))
+                .map(os -> {
+                    validarAcessoCliente(os, authentication);
+                    return ResponseEntity.ok(OrdemServicoResponse.from(os));
+                })
                 .orElse(ResponseEntity.notFound().build());
     }
 
     @GetMapping("/{id}/status")
-    public ResponseEntity<OrdemServicoStatusResponse> buscarStatus(@PathVariable UUID id) {
+    public ResponseEntity<OrdemServicoStatusResponse> buscarStatus(@PathVariable UUID id, Authentication authentication) {
         return gerenciadorOS.buscarPorId(id)
-                .map(os -> ResponseEntity.ok(OrdemServicoStatusResponse.from(os)))
+                .map(os -> {
+                    validarAcessoCliente(os, authentication);
+                    return ResponseEntity.ok(OrdemServicoStatusResponse.from(os));
+                })
                 .orElse(ResponseEntity.notFound().build());
     }
 
     @GetMapping("/cliente/{cpfCnpj}")
     public ResponseEntity<List<OrdemServicoResponse>> buscarPorCliente(@PathVariable String cpfCnpj, Authentication authentication) {
-        boolean cliente = authentication.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_CLIENTE"));
-        if (cliente && !cpfCnpj.replaceAll("\\D", "").equals(authentication.getPrincipal())) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        boolean cliente = isCliente(authentication);
+        if (cliente && !cpfCnpj.replaceAll("\\D", "").equals(authentication.getName())) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         return ResponseEntity.ok(gerenciadorOS.buscarPorCpfCnpj(cpfCnpj).stream().map(OrdemServicoResponse::from).toList());
+    }
+
+    private void validarAcessoCliente(OrdemServico os, Authentication authentication) {
+        if (isCliente(authentication)
+                && !os.getCliente().getCpfCnpj().getValue().equals(authentication.getName())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Acesso não permitido a esta ordem de serviço");
+        }
+    }
+
+    private boolean isCliente(Authentication authentication) {
+        return authentication.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_CLIENTE".equals(authority.getAuthority()));
     }
 
     @PostMapping("/{id}/itens")

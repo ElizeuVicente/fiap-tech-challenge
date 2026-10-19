@@ -1,0 +1,22 @@
+namespace: oficina-homolog
+resources:
+  - ../base
+  - namespace.yaml
+patches:
+  - target:
+      kind: Service
+      name: oficina-api
+    patch: |-
+      - op: replace
+        path: /spec/ports/0/nodePort
+        value: 30081
+  - target:
+      kind: Deployment
+      name: oficina-api
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/readinessProbe/httpGet/path
+        value: /homolog/actuator/health/readiness
+      - op: replace
+        path: /spec/template/spec/containers/0/livenessProbe/httpGet/path
+        value: /homolog/actuator/health/liveness
