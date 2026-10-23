@@ -43,6 +43,8 @@ class OrdemServicoTest {
         assertEquals(StatusOrdemServico.DIAGNOSTICO, os.getStatus());
         assertEquals(2, os.getHistoricoStatus().size());
         assertEquals("corr-1", os.getHistoricoStatus().get(1).getCorrelationId());
+        assertSame(os, os.getHistoricoStatus().get(0).getOrdemServico());
+        assertSame(os, os.getHistoricoStatus().get(1).getOrdemServico());
     }
 
     @Test
