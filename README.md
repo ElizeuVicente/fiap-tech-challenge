@@ -1,6 +1,6 @@
 # Oficina Tech Challenge - Sistema de Oficina
 
-Backend para gestao operacional de uma oficina mecanica, desenvolvido para o Tech Challenge FIAP 14SOAT. O projeto evolui o MVP das Fases 1 e 2 e prepara a Fase 3 com migrations, métricas Prometheus, correlação de requisições e segurança por papel/CPF. A implantação cloud ainda está em desenvolvimento nos quatro repositórios.
+Backend para gestao operacional de uma oficina mecanica, desenvolvido para o Tech Challenge FIAP 14SOAT. O projeto evolui o MVP das Fases 1 e 2 e inclui a Fase 3 com migrations, métricas Prometheus, correlação de requisições e segurança por papel/CPF. A arquitetura dos quatro repositórios foi implantada e validada no AWS Academy Learner Lab em 23/10/2026; os recursos cloud são temporários e não constituem URLs permanentes. Consulte a [evidência técnica e o estado da entrega](architecture/fase3-aws.md#execução-validada-no-learner-lab).
 
 > Este repositório ainda inclui laboratório local de Docker/Kubernetes. Não confunda esse laboratório com a implantação gerenciada exigida na Fase 3.
 
@@ -440,11 +440,11 @@ terraform apply \
   -var='postgres_password=troque-esta-senha'
 ```
 
-Para AWS, os manifests de `k8s-cloud/` separam `oficina-homolog` e `oficina-prod`; `k8s/` e `infra/` continuam exclusivamente locais. O deploy cloud espera EKS, ECR, ALB, RDS e gateway dos três repositórios de infraestrutura. Nada foi aplicado na AWS nesta etapa.
+Para AWS, os manifests de `k8s-cloud/` separam `oficina-homolog` e `oficina-prod`; `k8s/` e `infra/` continuam exclusivamente locais. O deploy cloud usa EKS, ECR, ALB, RDS e gateway dos três repositórios de infraestrutura. Ambos os overlays foram aplicados e testados no Learner Lab em 23/10/2026; a infraestrutura é efêmera para preservar o saldo do laboratório.
 
 ## CI/CD
 
-O workflow `.github/workflows/ci-cd.yml` executa `./mvnw verify` e valida os overlays em PR. O job cloud só é habilitado por `ENABLE_CLOUD_DEPLOY=true`: usa credenciais temporárias no GitHub Environment `homolog`/`prod`, publica imagem por SHA no ECR, injeta configuração/segredos, faz rollout no EKS e testa a negativa de acesso anônimo pelo gateway. O deploy usa runner próprio rotulado `oficina-deploy`, localizado em um CIDR permitido pelo endpoint privado/restrito do EKS; runners públicos do GitHub não têm IP fixo. Configure proteção de `main` e aprovação do environment `prod` antes de habilitar. No primeiro deploy, antes de existir o Gateway, execute `workflow_dispatch` com `bootstrap_without_gateway=true`: ele faz o rollout da API, mas **pula somente o smoke test do Gateway**. Após criar o Gateway, execute o workflow novamente com o padrão `false` para validar as rotas; não use o bootstrap como evidência final de E2E. A variável `GATEWAY_URL` aponta para a URL futura, **ainda inativa**.
+O workflow `.github/workflows/ci-cd.yml` executa `./mvnw verify` e valida os overlays em PR. O job cloud só é habilitado por `ENABLE_CLOUD_DEPLOY=true`: usa credenciais temporárias no GitHub Environment `homolog`/`prod`, publica imagem por SHA no ECR, injeta configuração/segredos, faz rollout no EKS e testa a negativa de acesso anônimo pelo gateway. O deploy usa runner próprio rotulado `oficina-deploy`, localizado em um CIDR permitido pelo endpoint restrito do EKS; runners públicos do GitHub não têm IP fixo. Configure proteção de `main` e aprovação do environment `prod` antes de habilitar. No primeiro deploy, antes de existir o Gateway, execute `workflow_dispatch` com `bootstrap_without_gateway=true`: ele faz o rollout da API, mas **pula somente o smoke test do Gateway**. Após criar o Gateway, execute o workflow novamente com o padrão `false` para validar as rotas; não use o bootstrap como evidência final de E2E. Os [runs de produção](https://github.com/ElizeuVicente/fiap-tech-challenge/actions/runs/40000469037) e [homologação](https://github.com/ElizeuVicente/fiap-tech-challenge/actions/runs/40000503924) passaram com o Gateway real. Em nova sessão, configure novamente `GATEWAY_URL`, segredos temporários e runner; os valores anteriores não garantem endpoint ativo.
 
 ## Documentacao complementar
 

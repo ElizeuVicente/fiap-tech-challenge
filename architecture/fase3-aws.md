@@ -1,6 +1,6 @@
 # Arquitetura da Fase 3 — AWS Academy
 
-Estado: **implementação declarativa local, ainda não implantada**. Este documento descreve o desenho versionável; não é evidência de recursos AWS ativos.
+Estado: **implantação real validada em 23/10/2026 no AWS Academy Learner Lab**. Os recursos são efêmeros e os links do Gateway podem estar inativos após a janela de testes; os runs de CI/CD e os resultados abaixo permanecem como evidência técnica.
 
 ## Componentes
 
@@ -96,11 +96,19 @@ Flyway mantém as migrations V1–V3 em cada schema. O schema é selecionado pel
 3. **API Gateway + Lambda CPF:** separa autenticação de clientes da API; VPC Link mantém a API atrás de ALB interno. O authorizer reforça o perímetro e a API permanece responsável pela autorização de negócio.
 4. **Sem NAT Gateway:** nós em subnets públicas recebem IP público e fazem pull do ECR; SG/sem SSH e CIDR do control plane reduzem a superfície. RDS/Lambda permanecem nas privadas. Isso reduz custo, mas não é a topologia recomendada para produção real.
 5. **Estado Terraform S3:** três states independentes (`kubernetes`, `database`, `auth`) com lockfile, criptografia, versionamento e bloqueio público. Sem bucket protegido não há apply seguro; o state contém senha e chave JWT.
-6. **Janela curta e teto:** US$ 25 no máximo nesta fase, reservando US$ 25 dos créditos para depois. Estimar antes de provisionar, monitorar cobrança e destruir após a demonstração aprovada. Budget avisa, não corta serviço automaticamente.
+6. **Janela curta e teto:** a implantação validada em 23/10/2026 teve limite autorizado de US$ 10 sobre o saldo informado `Used $0 of $50`. Estimar antes de provisionar, monitorar cobrança e destruir após a demonstração técnica. O painel do Learner Lab pode atrasar 8–12 horas e não corta serviço automaticamente.
 
 ## Operação e evidência
 
-Os quatro repositórios executam testes/validação em PR. Workflows cloud permanecem desabilitados até `ENABLE_CLOUD_DEPLOY=true` e credenciais de sessão válidas em environments protegidos. A ordem de ativação é rede/EKS/ECR/ALB, RDS, API/Flyway, Lambda/gateway e observabilidade. A ordem de desligamento é inversa. URLs, dashboards e execução real em AWS precisam ser registrados depois do apply; arquivos Terraform e diagramas sozinhos não comprovam entrega cloud.
+Os quatro repositórios executam testes/validação em PR. Workflows cloud permanecem desabilitados até `ENABLE_CLOUD_DEPLOY=true` e credenciais de sessão válidas em environments protegidos. A ordem de ativação é rede/EKS/ECR/ALB, RDS, observabilidade/API/Flyway e Lambda/gateway; o primeiro deploy da API pode usar `bootstrap_without_gateway=true` para quebrar a dependência circular. A ordem de desligamento é inversa. Diagramas e Terraform sozinhos não comprovam execução; os runs e testes abaixo documentam a janela real.
+
+## Execução validada no Learner Lab
+
+Em 23/10/2026, os seguintes workflows executaram na conta do curso: [EKS e observabilidade](https://github.com/ElizeuVicente/oficina-kubernetes-infra/actions/runs/39997621609), [RDS](https://github.com/ElizeuVicente/oficina-database-infra/actions/runs/39998110755), [Lambda produção](https://github.com/ElizeuVicente/oficina-auth-lambda/actions/runs/39999149662), [Lambda homologação](https://github.com/ElizeuVicente/oficina-auth-lambda/actions/runs/40000005381), [API produção](https://github.com/ElizeuVicente/fiap-tech-challenge/actions/runs/40000469037) e [API homologação](https://github.com/ElizeuVicente/fiap-tech-challenge/actions/runs/40000503924). Os seis terminaram com sucesso. Não publicar credenciais, senha de banco, JWT ou endereço administrativo usado na janela.
+
+O Gateway negou requisição anônima (401), aceitou login ADMIN e JWT de CPF para cliente `ATIVO` nos dois ambientes e recusou token de produção em homologação (403). Com dados sintéticos, uma OS de produção percorreu `RECEBIDA → DIAGNOSTICO → AGUARDANDO_APROVACAO → EXECUCAO` e uma de homologação terminou `RECUSADA`; a consulta do cliente via JWT retornou o status correto. A consulta SQL no RDS confirmou quatro eventos de histórico ligados à OS de produção. O HPA escalou de um para dois pods em nós distintos sob carga controlada, depois a carga foi removida.
+
+Grafana expôs o dashboard `Oficina — Fase 3` e três fontes de dados privadas; Prometheus mostrou `up=1` para ambos os ambientes, Loki recebeu logs e Tempo recebeu traces. O Alertmanager entregou um alerta sintético `firing` ao receptor privado (HTTP 204), além dos alertas resolvidos do bootstrap. A gravação de vídeo e o PDF único do edital **não** foram produzidos nesta janela e continuam necessários para a entrega formal. Uma nova gravação requer reimplantar a stack temporariamente com orçamento e credenciais de sessão válidos.
 
 ## Artefatos complementares
 
