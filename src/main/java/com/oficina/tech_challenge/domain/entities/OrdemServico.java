@@ -33,8 +33,7 @@ public class OrdemServico {
     private LocalDateTime dataInicioExecucao;
     private LocalDateTime dataFinalizacao;
 
-    @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
-    @JoinColumn(name = "ordem_servico_id")
+    @OneToMany(mappedBy = "ordemServico", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<HistoricoStatusOrdemServico> historicoStatus = new ArrayList<>();
 
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
@@ -50,11 +49,11 @@ public class OrdemServico {
         this.veiculo = veiculo;
         this.status = StatusOrdemServico.RECEBIDA;
         this.dataCriacao = LocalDateTime.now();
-        this.historicoStatus.add(new HistoricoStatusOrdemServico(null, this.status, "ABERTURA", null));
+        this.historicoStatus.add(new HistoricoStatusOrdemServico(this, null, this.status, "ABERTURA", null));
     }
 
     public void registrarHistorico(StatusOrdemServico anterior, String origem, String correlationId) {
-        if (anterior != this.status) historicoStatus.add(new HistoricoStatusOrdemServico(anterior, status, origem, correlationId));
+        if (anterior != this.status) historicoStatus.add(new HistoricoStatusOrdemServico(this, anterior, status, origem, correlationId));
     }
 
     public void adicionarServico(Servico servico) {

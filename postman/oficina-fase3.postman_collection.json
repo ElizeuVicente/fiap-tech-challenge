@@ -25,7 +25,7 @@
         "body": { "mode": "raw", "raw": "{\"cpf\":\"{{cpfTeste}}\"}" },
         "url": "{{baseUrl}}{{prefix}}/auth/cpf"
       },
-      "event": [{ "listen": "test", "script": { "exec": ["if (pm.response.code === 200) pm.collectionVariables.set('tokenCliente', pm.response.json().token);"] } }]
+      "event": [{ "listen": "test", "script": { "exec": ["if (pm.response.code === 200) pm.collectionVariables.set('tokenCliente', pm.response.json().accessToken);"] } }]
     },
     {
       "name": "Login administrativo",

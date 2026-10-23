@@ -356,6 +356,8 @@ Rodar suite completa com verificacao de cobertura:
 ./mvnw verify
 ```
 
+`HistoricoStatusPostgresIntegrationTest` executa a abertura e uma transição de OS em PostgreSQL real via Testcontainers e verifica que os eventos de histórico são gravados com `ordem_servico_id` obrigatório. O relacionamento é bidirecional: cada evento recebe a OS proprietária antes da persistência em cascata. Esse teste protege a compatibilidade entre JPA e a migration V3; testes apenas com H2 não detectaram a falha anterior.
+
 Rodar apenas testes:
 
 ```bash
