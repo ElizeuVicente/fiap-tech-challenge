@@ -12,6 +12,10 @@ on:
         required: false
         default: false
 
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -23,14 +27,36 @@ jobs:
           java-version: '17'
           cache: maven
       - run: ./mvnw verify
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: os-coverage
+          path: target/site/jacoco/
+          if-no-files-found: warn
       - uses: azure/setup-kubectl@v4
       - name: Validar manifests cloud
         run: |
           kubectl kustomize k8s-cloud/homolog >/dev/null
           kubectl kustomize k8s-cloud/prod >/dev/null
 
+  codeql:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: java-kotlin
+          build-mode: manual
+      - run: ./mvnw -B -DskipTests package
+      - uses: github/codeql-action/analyze@v4
+
   deploy:
-    needs: test
+    needs: [test, codeql]
     if: github.event_name != 'pull_request' && vars.ENABLE_CLOUD_DEPLOY == 'true'
     runs-on: [self-hosted, linux, oficina-deploy]
     environment: ${{ github.ref_name == 'main' && 'prod' || 'homolog' }}
