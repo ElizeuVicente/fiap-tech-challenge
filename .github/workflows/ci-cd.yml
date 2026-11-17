@@ -64,9 +64,12 @@ jobs:
       group: oficina-api-${{ github.ref_name }}
       cancel-in-progress: false
     env:
+      AWS_PROFILE: fiap-lab
+      AWS_REGION: us-east-1
       DEPLOY_ENV: ${{ github.ref_name == 'main' && 'prod' || 'homolog' }}
       EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
       ECR_REPOSITORY_URL: ${{ vars.ECR_REPOSITORY_URL }}
+      REQUIRE_FASE4_CONFIG: ${{ vars.REQUIRE_FASE4_CONFIG }}
       DB_ENDPOINT: ${{ vars.DB_ENDPOINT }}
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
       SECURITY_JWT_SECRET: ${{ secrets.SECURITY_JWT_SECRET }}
@@ -80,12 +83,6 @@ jobs:
           for name in EKS_CLUSTER_NAME ECR_REPOSITORY_URL DB_ENDPOINT DB_PASSWORD SECURITY_JWT_SECRET EXTERNAL_WEBHOOK_SECRET; do
             if [ -z "${!name}" ]; then echo "Variável obrigatória ausente: $name"; exit 1; fi
           done
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-region: us-east-1
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
       - name: Confirmar sessão temporária
         run: aws sts get-caller-identity --query Arn --output text >/dev/null
       - name: Construir e enviar imagem imutável
@@ -101,6 +98,7 @@ jobs:
           aws eks update-kubeconfig --name "$EKS_CLUSTER_NAME"
           kubectl apply -f "k8s-cloud/${DEPLOY_ENV}/namespace.yaml"
           namespace="oficina-${DEPLOY_ENV}"
+          if [ "$REQUIRE_FASE4_CONFIG" = true ]; then kubectl -n "$namespace" get secret oficina-fase4-config >/dev/null; fi
           context_path=""
           if [ "$DEPLOY_ENV" = homolog ]; then context_path=/homolog; fi
           kubectl -n "$namespace" create configmap oficina-cloud-config \
