@@ -24,6 +24,17 @@ class OrdemServicoTest {
     }
 
     @Test
+    void filialDaOrdemPodeSerDefinidaUmaUnicaVez() {
+        OrdemServico os = new OrdemServico(cliente, veiculo);
+        var filial = java.util.UUID.randomUUID();
+        assertNull(os.getFilialId());
+        assertThrows(IllegalArgumentException.class, () -> os.identificarFilial(null));
+        os.identificarFilial(filial); os.identificarFilial(filial);
+        assertEquals(filial, os.getFilialId());
+        assertThrows(IllegalStateException.class, () -> os.identificarFilial(java.util.UUID.randomUUID()));
+    }
+
+    @Test
     void deveCalcularValorTotalCorretamente() {
         OrdemServico os = new OrdemServico(cliente, veiculo);
         os.registrarDiagnostico("Necessária troca de óleo");

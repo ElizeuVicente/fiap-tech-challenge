@@ -25,10 +25,25 @@ public class ItemServico {
     @ManyToOne
     private Servico servico;
 
+    private UUID referenciaExternaId;
+    private String descricaoSnapshot;
+
     private BigDecimal precoAplicado;
 
     public ItemServico(Servico servico) {
         this.servico = servico;
+        this.referenciaExternaId = servico.getId();
+        this.descricaoSnapshot = servico.getNome();
         this.precoAplicado = servico.getPrecoBase();
     }
+
+    public UUID getReferenciaCatalogoId() {
+        return referenciaExternaId != null ? referenciaExternaId : servico != null ? servico.getId() : null;
+    }
+    public ItemServico(UUID referencia, String descricao, BigDecimal preco) {
+        if (referencia == null || descricao == null || descricao.isBlank() || preco == null || preco.signum() <= 0)
+            throw new IllegalArgumentException("Item de catálogo inválido");
+        this.referenciaExternaId = referencia; this.descricaoSnapshot = descricao; this.precoAplicado = preco;
+    }
+    public String getDescricaoCatalogo() { return descricaoSnapshot != null ? descricaoSnapshot : servico != null ? servico.getNome() : null; }
 }

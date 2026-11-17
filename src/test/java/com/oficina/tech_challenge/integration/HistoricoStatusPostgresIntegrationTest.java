@@ -18,6 +18,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @SpringBootTest(properties = {
         "spring.flyway.schemas=oficina_test_history",
@@ -46,6 +47,32 @@ class HistoricoStatusPostgresIntegrationTest {
     @Autowired private OrdemServicoRepository repository;
     @Autowired private EntityManager entityManager;
     @Autowired private JdbcTemplate jdbc;
+    @Autowired private jakarta.persistence.EntityManagerFactory factory;
+
+    @Test
+    void concurrentDiagnosisCannotOverwriteCommittedUpdate() {
+        var command = new AberturaOrdemServicoCommand(
+                new AberturaOrdemServicoCommand.ClienteData("Cliente Concorrente", "11144477735", "concorrente@example.com", "11999999999"),
+                new AberturaOrdemServicoCommand.VeiculoData("CON1A23", "Fiat", "Argo", 2022), List.of(), List.of());
+        var id = ordens.abrirOrdemServico(command).getId();
+        var first = factory.createEntityManager();
+        var second = factory.createEntityManager();
+        try {
+            first.getTransaction().begin(); second.getTransaction().begin();
+            var firstOrder = first.find(com.oficina.tech_challenge.domain.entities.OrdemServico.class, id);
+            var secondOrder = second.find(com.oficina.tech_challenge.domain.entities.OrdemServico.class, id);
+            firstOrder.registrarDiagnostico("primeiro");
+            secondOrder.registrarDiagnostico("segundo");
+            first.getTransaction().commit();
+            assertThrows(jakarta.persistence.OptimisticLockException.class, second::flush);
+            second.getTransaction().rollback();
+            assertEquals("primeiro", repository.findById(id).orElseThrow().getDiagnostico());
+        } finally {
+            if (first.getTransaction().isActive()) first.getTransaction().rollback();
+            if (second.getTransaction().isActive()) second.getTransaction().rollback();
+            first.close(); second.close();
+        }
+    }
 
     @Test
     @Transactional

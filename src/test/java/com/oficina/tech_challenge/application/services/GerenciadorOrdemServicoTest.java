@@ -73,6 +73,111 @@ class GerenciadorOrdemServicoTest {
     }
 
     @Test
+    void filialDaOsOrientaCatalogoEOrcamento() {
+        var catalog = mock(com.oficina.tech_challenge.application.interfaces.ExecutionCatalogQuery.class);
+        var billing = mock(com.oficina.tech_challenge.application.interfaces.BillingQuoteDispatch.class);
+        UUID branch = UUID.randomUUID(), part = UUID.randomUUID();
+        os.identificarFilial(branch);
+        gerenciadorOS.setExecutionCatalog(catalog); gerenciadorOS.setBillingDispatch(billing);
+        org.springframework.test.util.ReflectionTestUtils.setField(gerenciadorOS, "paymentGate", true);
+        org.springframework.test.util.ReflectionTestUtils.setField(gerenciadorOS, "catalogBranchId", UUID.randomUUID().toString());
+        when(osRepository.findById(osId)).thenReturn(Optional.of(os));
+        when(osRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(catalog.part(branch, part)).thenReturn(new com.oficina.tech_challenge.application.interfaces.ExecutionCatalogQuery.Item(branch, part, "Filtro", new BigDecimal("25.00")));
+        gerenciadorOS.adicionarItens(osId, List.of(), List.of(part), List.of(1));
+        os.registrarDiagnostico("teste");
+        gerenciadorOS.gerarOrcamento(osId);
+        verify(billing).schedule(eq(osId), eq(branch), eq(new BigDecimal("25.00")), anyList());
+    }
+
+    @Test
+    void novosItensUsamPrecoExternoSemAlterarItensHistoricos() {
+        var catalog = mock(com.oficina.tech_challenge.application.interfaces.ExecutionCatalogQuery.class);
+        UUID branch = UUID.randomUUID(), partId = UUID.randomUUID();
+        var part = new Peca("Filtro", new BigDecimal("10.00"), 5); part.setId(partId);
+        os.adicionarPeca(part, 1);
+        gerenciadorOS.setExecutionCatalog(catalog);
+        org.springframework.test.util.ReflectionTestUtils.setField(gerenciadorOS, "paymentGate", true);
+        org.springframework.test.util.ReflectionTestUtils.setField(gerenciadorOS, "catalogBranchId", branch.toString());
+        when(osRepository.findById(osId)).thenReturn(Optional.of(os));
+        when(catalog.part(branch, partId)).thenReturn(new com.oficina.tech_challenge.application.interfaces.ExecutionCatalogQuery.Item(branch, partId, "Filtro", new BigDecimal("25.00")));
+        gerenciadorOS.adicionarItens(osId, List.of(), List.of(partId), List.of(2));
+        assertEquals(new BigDecimal("10.00"), os.getPecas().get(0).getPrecoAplicado());
+        assertEquals(new BigDecimal("25.00"), os.getPecas().get(1).getPrecoAplicado());
+        assertNull(os.getPecas().get(1).getPeca());
+        verifyNoInteractions(pecaRepository);
+        when(catalog.part(branch, partId)).thenThrow(new IllegalStateException("catálogo indisponível"));
+        assertThrows(IllegalStateException.class, () -> gerenciadorOS.adicionarItens(osId, List.of(), List.of(partId), List.of(1)));
+        assertEquals(2, os.getPecas().size());
+    }
+
+    @Test
+    void fase4ApprovalWaitsForPaymentWithoutReducingStock() {
+        org.springframework.test.util.ReflectionTestUtils.setField(gerenciadorOS, "paymentGate", true);
+        var part = new Peca("Peça", new BigDecimal("10.00"), 5);
+        os.registrarDiagnostico("teste"); os.adicionarPeca(part, 2); os.gerarOrcamento();
+        when(osRepository.findById(osId)).thenReturn(Optional.of(os));
+        gerenciadorOS.aprovarOrcamento(osId);
+        assertEquals(StatusOrdemServico.AGUARDANDO_PAGAMENTO, os.getStatus());
+        assertEquals(5, part.getQuantidadeEstoque());
+        assertThrows(IllegalStateException.class, () -> gerenciadorOS.atualizarStatus(osId, new AtualizacaoStatusCommand(StatusOrdemServico.EXECUCAO, "API")));
+        assertEquals(5, part.getQuantidadeEstoque());
+    }
+
+    @Test
+    void fase4ExternalApprovalAlsoWaitsForPayment() {
+        org.springframework.test.util.ReflectionTestUtils.setField(gerenciadorOS, "paymentGate", true);
+        os.registrarDiagnostico("teste"); os.gerarOrcamento();
+        when(osRepository.findById(osId)).thenReturn(Optional.of(os));
+        var command = new NotificacaoOrcamentoCommand(DecisaoOrcamento.APROVADO, "BILLING_SAGA", LocalDateTime.now(), "evento-1");
+        gerenciadorOS.processarNotificacaoOrcamento(osId, command);
+        assertEquals(StatusOrdemServico.AGUARDANDO_PAGAMENTO, os.getStatus());
+        assertNull(os.getDataInicioExecucao());
+    }
+
+    @Test
+    void diagnosticoDaExecucaoEhIdempotenteERejeitaConflito() {
+        when(osRepository.findById(osId)).thenReturn(Optional.of(os));
+        gerenciadorOS.registrarDiagnosticoExecucao(osId, "Freio desgastado");
+        gerenciadorOS.registrarDiagnosticoExecucao(osId, "Freio desgastado");
+        assertEquals(StatusOrdemServico.DIAGNOSTICO, os.getStatus());
+        verify(osRepository, times(1)).save(os);
+        assertThrows(IllegalStateException.class, () -> gerenciadorOS.registrarDiagnosticoExecucao(osId, "Outro diagnóstico"));
+        assertThrows(IllegalArgumentException.class, () -> gerenciadorOS.registrarDiagnosticoExecucao(osId, " "));
+    }
+
+    @Test
+    void conclusaoDaExecucaoRespeitaEstadoEIdempotencia() {
+        when(osRepository.findById(osId)).thenReturn(Optional.of(os));
+        assertThrows(IllegalStateException.class, () -> gerenciadorOS.registrarConclusaoExecucao(osId));
+        os.registrarDiagnostico("teste"); os.gerarOrcamento(); os.aprovar();
+        gerenciadorOS.registrarConclusaoExecucao(osId);
+        gerenciadorOS.registrarConclusaoExecucao(osId);
+        assertEquals(StatusOrdemServico.FINALIZADA, os.getStatus());
+        assertNotNull(os.getDataFinalizacao());
+        assertEquals("EXECUCAO", os.getHistoricoStatus().get(os.getHistoricoStatus().size() - 1).getOrigem());
+        verify(osRepository, times(1)).save(os);
+    }
+
+    @Test
+    void integracaoBillingImpedeDecisaoPelasRotasLegadas() {
+        gerenciadorOS.setBillingDispatch(mock(com.oficina.tech_challenge.application.interfaces.BillingQuoteDispatch.class));
+        var command = new NotificacaoOrcamentoCommand(DecisaoOrcamento.APROVADO, "API", LocalDateTime.now(), "evento-1");
+        assertThrows(IllegalStateException.class, () -> gerenciadorOS.aprovarOrcamento(osId));
+        assertThrows(IllegalStateException.class, () -> gerenciadorOS.processarNotificacaoOrcamento(osId, command));
+        assertThrows(IllegalStateException.class, () -> gerenciadorOS.atualizarStatus(osId, new AtualizacaoStatusCommand(StatusOrdemServico.RECUSADA, "API")));
+        verifyNoInteractions(osRepository);
+    }
+
+    @Test
+    void integracaoExecucaoImpedeFinalizacaoManual() {
+        gerenciadorOS.setExecutionDispatch(mock(com.oficina.tech_challenge.application.interfaces.ExecutionOrderDispatch.class));
+        assertThrows(IllegalStateException.class, () -> gerenciadorOS.finalizarOS(osId));
+        assertThrows(IllegalStateException.class, () -> gerenciadorOS.atualizarStatus(osId, new AtualizacaoStatusCommand(StatusOrdemServico.FINALIZADA, "API")));
+        verifyNoInteractions(osRepository);
+    }
+
+    @Test
     void deveCriarOSComSucesso() {
         when(gerenciadorCliente.buscarPorId(clienteId)).thenReturn(Optional.of(cliente));
         when(osRepository.save(any())).thenReturn(os);
@@ -85,16 +190,33 @@ class GerenciadorOrdemServicoTest {
     }
 
     @Test
+    void aberturaSimplificadaEncaminhaFilialParaExecucao() {
+        UUID branch = UUID.randomUUID();
+        var dispatch = mock(com.oficina.tech_challenge.application.interfaces.ExecutionOrderDispatch.class);
+        gerenciadorOS.setExecutionDispatch(dispatch);
+        when(gerenciadorCliente.buscarPorId(clienteId)).thenReturn(Optional.of(cliente));
+        when(osRepository.save(any())).thenAnswer(invocation -> {
+            OrdemServico saved = invocation.getArgument(0);
+            org.springframework.test.util.ReflectionTestUtils.setField(saved, "id", osId);
+            return saved;
+        });
+        var created = gerenciadorOS.criarOS(clienteId, "ABC1234", branch);
+        assertEquals(branch, created.getFilialId());
+        verify(dispatch).schedule(osId, branch);
+    }
+
+    @Test
     void deveAbrirOSComClienteVeiculoEItensCompletos() {
         UUID servicoId = UUID.randomUUID();
         UUID pecaId = UUID.randomUUID();
+        UUID filialId = UUID.randomUUID();
         Servico servico = new Servico("Alinhamento", new BigDecimal("120.00"), 60);
         Peca peca = new Peca("Filtro", new BigDecimal("30.00"), 5);
         AberturaOrdemServicoCommand command = new AberturaOrdemServicoCommand(
                 new AberturaOrdemServicoCommand.ClienteData("Cliente Novo", "98765432100", null, "11999999999"),
                 new AberturaOrdemServicoCommand.VeiculoData("DEF5G67", "Toyota", "Corolla", 2022),
                 List.of(new AberturaOrdemServicoCommand.ServicoData(servicoId)),
-                List.of(new AberturaOrdemServicoCommand.PecaData(pecaId, 2)));
+                List.of(new AberturaOrdemServicoCommand.PecaData(pecaId, 2)), filialId);
 
         when(clienteRepository.findByCpfCnpj(any())).thenReturn(Optional.empty());
         when(veiculoRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -106,6 +228,7 @@ class GerenciadorOrdemServicoTest {
         OrdemServico resultado = gerenciadorOS.abrirOrdemServico(command);
 
         assertEquals(StatusOrdemServico.RECEBIDA, resultado.getStatus());
+        assertEquals(filialId, resultado.getFilialId());
         assertEquals(1, resultado.getServicos().size());
         assertEquals(1, resultado.getPecas().size());
         assertEquals("cliente.sem.email@oficina.local", resultado.getCliente().getEmail());

@@ -19,6 +19,12 @@ public class OrdemServico {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @Version
+    private long versao;
+
+    // Nullable for pre-migration orders; no branch is guessed for historical data.
+    private UUID filialId;
+
     @ManyToOne
     private Cliente cliente;
 
@@ -28,6 +34,7 @@ public class OrdemServico {
     @Enumerated(EnumType.STRING)
     private StatusOrdemServico status;
 
+    @Column(length = 4000)
     private String diagnostico;
     private LocalDateTime dataCriacao;
     private LocalDateTime dataInicioExecucao;
@@ -52,6 +59,13 @@ public class OrdemServico {
         this.historicoStatus.add(new HistoricoStatusOrdemServico(this, null, this.status, "ABERTURA", null));
     }
 
+    public void identificarFilial(UUID filial) {
+        if (filial == null) throw new IllegalArgumentException("Filial é obrigatória");
+        if (filialId != null && !filialId.equals(filial))
+            throw new IllegalStateException("Filial da OS não pode ser alterada");
+        filialId = filial;
+    }
+
     public void registrarHistorico(StatusOrdemServico anterior, String origem, String correlationId) {
         if (anterior != this.status) historicoStatus.add(new HistoricoStatusOrdemServico(this, anterior, status, origem, correlationId));
     }
@@ -68,6 +82,18 @@ public class OrdemServico {
             throw new IllegalStateException("Não é possível adicionar peças nesta fase da OS");
         }
         this.pecas.add(new ItemPeca(peca, quantidade));
+    }
+
+    public void adicionarServicoCatalogo(UUID id, String descricao, BigDecimal preco) {
+        if (status != StatusOrdemServico.RECEBIDA && status != StatusOrdemServico.DIAGNOSTICO)
+            throw new IllegalStateException("Não é possível adicionar serviços nesta fase da OS");
+        servicos.add(new ItemServico(id, descricao, preco));
+    }
+
+    public void adicionarPecaCatalogo(UUID id, String descricao, BigDecimal preco, int quantidade) {
+        if (status != StatusOrdemServico.RECEBIDA && status != StatusOrdemServico.DIAGNOSTICO)
+            throw new IllegalStateException("Não é possível adicionar peças nesta fase da OS");
+        pecas.add(new ItemPeca(id, descricao, preco, quantidade));
     }
 
     public void registrarDiagnostico(String diagnostico) {
@@ -92,6 +118,20 @@ public class OrdemServico {
         this.dataInicioExecucao = LocalDateTime.now();
     }
 
+    public void aprovarAguardandoPagamento() {
+        if (this.status != StatusOrdemServico.AGUARDANDO_APROVACAO)
+            throw new IllegalStateException("Somente OS aguardando aprovação podem ser aprovadas");
+        this.status = StatusOrdemServico.AGUARDANDO_PAGAMENTO;
+    }
+
+    public void iniciarExecucaoConfirmada() {
+        if (status == StatusOrdemServico.EXECUCAO) return;
+        if (status != StatusOrdemServico.AGUARDANDO_PAGAMENTO)
+            throw new IllegalStateException("Execução confirmada requer OS aguardando pagamento");
+        status = StatusOrdemServico.EXECUCAO;
+        dataInicioExecucao = LocalDateTime.now();
+    }
+
     public void recusar() {
         if (this.status != StatusOrdemServico.AGUARDANDO_APROVACAO) {
             throw new IllegalStateException("Somente OS aguardando aprovação podem ser recusadas");
@@ -109,6 +149,7 @@ public class OrdemServico {
                 registrarDiagnostico(this.diagnostico == null ? "Atualização externa" : this.diagnostico);
             }
             case AGUARDANDO_APROVACAO -> gerarOrcamento();
+            case AGUARDANDO_PAGAMENTO -> throw new IllegalStateException("Aguardando pagamento depende da aprovação de orçamento");
             case EXECUCAO -> aprovar();
             case FINALIZADA -> finalizar();
             case ENTREGUE -> entregar();

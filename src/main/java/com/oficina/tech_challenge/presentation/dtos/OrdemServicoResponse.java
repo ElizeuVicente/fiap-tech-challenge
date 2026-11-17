@@ -10,6 +10,7 @@ import java.util.UUID;
 
 public record OrdemServicoResponse(
         UUID id,
+        UUID filialId,
         StatusOrdemServico status,
         String diagnostico,
         LocalDateTime dataCriacao,
@@ -44,14 +45,14 @@ public record OrdemServicoResponse(
         List<ItemServicoResponse> servicos = os.getServicos().stream()
                 .map(i -> new ItemServicoResponse(
                         i.getId(),
-                        i.getServico().getNome(),
+                        i.getDescricaoCatalogo(),
                         i.getPrecoAplicado()))
                 .toList();
 
         List<ItemPecaResponse> pecas = os.getPecas().stream()
                 .map(i -> new ItemPecaResponse(
                         i.getId(),
-                        i.getPeca().getNome(),
+                        i.getDescricaoCatalogo(),
                         i.getQuantidade(),
                         i.getPrecoAplicado(),
                         i.getSubtotal()))
@@ -59,6 +60,7 @@ public record OrdemServicoResponse(
 
         return new OrdemServicoResponse(
                 os.getId(),
+                os.getFilialId(),
                 os.getStatus(),
                 os.getDiagnostico(),
                 os.getDataCriacao(),

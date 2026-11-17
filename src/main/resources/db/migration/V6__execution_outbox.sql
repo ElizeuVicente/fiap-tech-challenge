@@ -1,0 +1,6 @@
+CREATE TABLE execution_outbox (
+    order_id UUID PRIMARY KEY,
+    branch_id UUID NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    delivered_at TIMESTAMP WITH TIME ZONE
+);

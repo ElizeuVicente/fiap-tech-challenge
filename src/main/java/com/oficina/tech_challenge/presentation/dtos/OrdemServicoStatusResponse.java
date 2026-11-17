@@ -27,6 +27,7 @@ public record OrdemServicoStatusResponse(
             case RECEBIDA -> "Recebida";
             case DIAGNOSTICO -> "Em diagnóstico";
             case AGUARDANDO_APROVACAO -> "Aguardando Aprovação";
+            case AGUARDANDO_PAGAMENTO -> "Aguardando Pagamento";
             case EXECUCAO -> "Em execução";
             case FINALIZADA -> "Finalizada";
             case ENTREGUE -> "Entregue";
@@ -39,6 +40,7 @@ public record OrdemServicoStatusResponse(
             case RECEBIDA -> "Registrar diagnóstico";
             case DIAGNOSTICO -> "Gerar orçamento";
             case AGUARDANDO_APROVACAO -> "Aprovação ou recusa do orçamento pelo cliente";
+            case AGUARDANDO_PAGAMENTO -> "Aguardando confirmação de pagamento e reserva de peças";
             case EXECUCAO -> "Finalizar execução dos serviços";
             case FINALIZADA -> "Entregar veículo ao cliente";
             case ENTREGUE, RECUSADA -> "Nenhuma ação operacional pendente";

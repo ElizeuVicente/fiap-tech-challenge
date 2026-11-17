@@ -1,0 +1,130 @@
+name: oficina-fase4-local
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: oficina
+      RABBITMQ_DEFAULT_PASS: oficina-local
+    volumes: ["rabbit-data:/var/lib/rabbitmq"]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  os-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: oficina
+      POSTGRES_USER: oficina
+      POSTGRES_PASSWORD: oficina-local
+    volumes: ["os-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oficina -d oficina"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  billing-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: billing
+      POSTGRES_USER: billing
+      POSTGRES_PASSWORD: billing-local
+    volumes: ["billing-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U billing -d billing"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  execution-db:
+    image: mongo:7
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    volumes: ["execution-data:/data/db"]
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'try { rs.status() } catch(e) { rs.initiate({_id: \"rs0\", members: [{_id: 0, host: \"execution-db:27017\"}]}) }; if (!db.hello().isWritablePrimary) quit(1)'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  execution:
+    build: ../oficina-execution-service
+    environment:
+      EXECUTION_MONGO_URI: mongodb://execution-db:27017/execution?replicaSet=rs0
+      EXECUTION_MULTI_PART_ENABLED: 'true'
+      EXECUTION_SERVICE_TOKEN: ${EXECUTION_SERVICE_TOKEN:?Configure EXECUTION_SERVICE_TOKEN with at least 32 characters}
+      EXECUTION_ALLOWED_BRANCHES: ${EXECUTION_ALLOWED_BRANCHES:-}
+    ports: ["127.0.0.1:18082:8082"]
+    depends_on:
+      execution-db: {condition: service_healthy}
+  os:
+    build: .
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://os-db:5432/oficina
+      SPRING_DATASOURCE_USERNAME: oficina
+      SPRING_DATASOURCE_PASSWORD: oficina-local
+      SECURITY_JWT_SECRET: local-only-0123456789abcdef0123456789abcdef
+      EXTERNAL_WEBHOOK_SECRET: local-only-webhook-secret
+      BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      OFICINA_BILLING_CONSUMER_ENABLED: 'true'
+      OFICINA_BILLING_COMMAND_PUBLISHER_ENABLED: 'true'
+      OFICINA_BILLING_QUOTE_ENABLED: ${OFICINA_BILLING_QUOTE_ENABLED:-true}
+      OFICINA_BILLING_QUOTE_URL: http://billing:8081
+      OFICINA_BILLING_QUOTE_BRANCH_ID: 00000000-0000-4000-8000-000000000001
+      OFICINA_BILLING_QUOTE_SERVICE_TOKEN: ${BILLING_SERVICE_TOKEN:?Configure BILLING_SERVICE_TOKEN com pelo menos 32 caracteres}
+      OFICINA_EXECUTION_ENABLED: 'true'
+      OFICINA_EXECUTION_CATALOG_ENABLED: ${OFICINA_EXECUTION_CATALOG_ENABLED:-false}
+      OFICINA_STOCK_SAGA_ENABLED: ${OFICINA_STOCK_SAGA_ENABLED:-true}
+      OFICINA_FASE4_PAYMENT_GATE: 'true'
+      OFICINA_EXECUTION_URL: http://execution:8082
+      OFICINA_EXECUTION_BRANCH_ID: 00000000-0000-4000-8000-000000000001
+      OFICINA_EXECUTION_SERVICE_TOKEN: ${EXECUTION_SERVICE_TOKEN:?Configure EXECUTION_SERVICE_TOKEN with at least 32 characters}
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: oficina
+      SPRING_RABBITMQ_PASSWORD: oficina-local
+      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: '0'
+    ports: ["127.0.0.1:18080:8080"]
+    depends_on:
+      os-db: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health/readiness || exit 1"]
+      interval: 5s
+      timeout: 4s
+      retries: 30
+      start_period: 30s
+  billing:
+    build: ../oficina-billing-service
+    environment:
+      BILLING_DB_URL: jdbc:postgresql://billing-db:5432/billing
+      BILLING_DB_USER: billing
+      BILLING_DB_PASSWORD: billing-local
+      BILLING_OUTBOX_ENABLED: 'true'
+      BILLING_ALLOWED_BRANCHES: ${BILLING_ALLOWED_BRANCHES:-}
+      BILLING_MERCADOPAGO_CHECKOUT_ENABLED: ${BILLING_MERCADOPAGO_CHECKOUT_ENABLED:-false}
+      BILLING_MERCADOPAGO_WEBHOOK_ENABLED: ${BILLING_MERCADOPAGO_WEBHOOK_ENABLED:-false}
+      BILLING_MERCADOPAGO_RECONCILIATION_ENABLED: ${BILLING_MERCADOPAGO_RECONCILIATION_ENABLED:-false}
+      BILLING_MERCADOPAGO_REFUNDS_ENABLED: ${BILLING_MERCADOPAGO_REFUNDS_ENABLED:-false}
+      BILLING_MERCADOPAGO_ACCESS_TOKEN: ${BILLING_MERCADOPAGO_ACCESS_TOKEN:-}
+      BILLING_MERCADOPAGO_WEBHOOK_SECRET: ${BILLING_MERCADOPAGO_WEBHOOK_SECRET:-}
+      BILLING_MERCADOPAGO_COLLECTOR_ID: ${BILLING_MERCADOPAGO_COLLECTOR_ID:-}
+      BILLING_MERCADOPAGO_NOTIFICATION_URL: ${BILLING_MERCADOPAGO_NOTIFICATION_URL:-}
+      BILLING_COMMANDS_ENABLED: 'true'
+      BILLING_SERVICE_TOKEN: ${BILLING_SERVICE_TOKEN:?Configure BILLING_SERVICE_TOKEN com pelo menos 32 caracteres}
+      RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: oficina
+      SPRING_RABBITMQ_PASSWORD: oficina-local
+    ports: ["127.0.0.1:18081:8081"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:8081/actuator/health | grep -q 'UP'"]
+      interval: 5s
+      timeout: 4s
+      retries: 30
+      start_period: 30s
+    depends_on:
+      billing-db: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+      os: {condition: service_healthy}
+volumes:
+  rabbit-data:
+  os-data:
+  billing-data:
+  execution-data:

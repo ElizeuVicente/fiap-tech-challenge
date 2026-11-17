@@ -7,8 +7,12 @@ public record AberturaOrdemServicoCommand(
         ClienteData cliente,
         VeiculoData veiculo,
         List<ServicoData> servicos,
-        List<PecaData> pecas
+        List<PecaData> pecas,
+        UUID filialId
 ) {
+    public AberturaOrdemServicoCommand(ClienteData cliente, VeiculoData veiculo, List<ServicoData> servicos, List<PecaData> pecas) {
+        this(cliente, veiculo, servicos, pecas, null);
+    }
     public record ClienteData(String nome, String cpfCnpj, String email, String telefone) {}
     public record VeiculoData(String placa, String marca, String modelo, Integer ano) {}
     public record ServicoData(UUID servicoId) {}

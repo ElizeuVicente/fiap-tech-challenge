@@ -11,6 +11,22 @@ import java.util.UUID;
 @Repository
 public interface OrdemServicoRepository extends JpaRepository<OrdemServico, UUID> {
     List<OrdemServico> findByClienteCpfCnpj(CpfCnpj cpfCnpj);
+    List<OrdemServico> findByFilialIdIn(List<UUID> filialIds);
+
+    @Query("""
+            SELECT o FROM OrdemServico o
+            WHERE o.filialId IN :filiais AND o.status NOT IN (
+                com.oficina.tech_challenge.domain.entities.StatusOrdemServico.FINALIZADA,
+                com.oficina.tech_challenge.domain.entities.StatusOrdemServico.ENTREGUE,
+                com.oficina.tech_challenge.domain.entities.StatusOrdemServico.RECUSADA)
+            ORDER BY CASE
+                WHEN o.status = com.oficina.tech_challenge.domain.entities.StatusOrdemServico.EXECUCAO THEN 1
+                WHEN o.status = com.oficina.tech_challenge.domain.entities.StatusOrdemServico.AGUARDANDO_APROVACAO THEN 2
+                WHEN o.status = com.oficina.tech_challenge.domain.entities.StatusOrdemServico.DIAGNOSTICO THEN 3
+                WHEN o.status = com.oficina.tech_challenge.domain.entities.StatusOrdemServico.RECEBIDA THEN 4
+                ELSE 5 END ASC, o.dataCriacao ASC
+            """)
+    List<OrdemServico> findOperacionaisPorFiliais(@org.springframework.data.repository.query.Param("filiais") List<UUID> filiais);
 
     @Query("""
             SELECT o FROM OrdemServico o
