@@ -131,7 +131,7 @@ jobs:
           prefix=""
           if [ "$DEPLOY_ENV" = homolog ]; then prefix=/homolog; fi
           status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$GATEWAY_URL$prefix/api/ordens-servico/monitoramento")
-          test "$status" = 401 || { echo "Gateway deveria negar requisição anônima: HTTP $status"; exit 1; }
+          if [ "$status" != 401 ] && [ "$status" != 403 ]; then echo "Gateway deveria negar requisição anônima: HTTP $status"; exit 1; fi
           body=$(jq -nc --arg username "$BOOTSTRAP_ADMIN_USERNAME" --arg password "$BOOTSTRAP_ADMIN_PASSWORD" '{username:$username,password:$password}')
           token=$(curl -fsS --max-time 20 -H 'Content-Type: application/json' -d "$body" "$GATEWAY_URL$prefix/api/auth/login")
           test -n "$token"
