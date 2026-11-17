@@ -13,6 +13,7 @@ import java.util.UUID;
 
 public interface IGerenciadorOrdemServico {
     OrdemServico criarOS(UUID clienteId, String placa);
+    OrdemServico criarOS(UUID clienteId, String placa, UUID filialId);
     OrdemServico abrirOrdemServico(AberturaOrdemServicoCommand command);
     void adicionarItens(UUID osId, List<UUID> servicoIds, List<UUID> pecaIds, List<Integer> quantidades);
     OrdemServico registrarDiagnostico(UUID osId, String diagnostico);
@@ -26,6 +27,7 @@ public interface IGerenciadorOrdemServico {
     List<OrdemServico> buscarPorCpfCnpj(String cpfCnpj);
     List<OrdemServico> listarTodas();
     List<OrdemServico> listarOperacionais();
+    List<OrdemServico> listarPorFiliais(List<UUID> filiais, boolean operacional);
     MonitoramentoData getMonitoramento();
     MetricasNegocioData getMetricasNegocio();
 }

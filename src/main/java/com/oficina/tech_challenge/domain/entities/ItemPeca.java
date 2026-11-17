@@ -25,6 +25,9 @@ public class ItemPeca {
     @ManyToOne
     private Peca peca;
 
+    private UUID referenciaExternaId;
+    private String descricaoSnapshot;
+
     private Integer quantidade;
     private BigDecimal precoAplicado;
 
@@ -33,6 +36,8 @@ public class ItemPeca {
             throw new IllegalArgumentException("Quantidade de peças deve ser positiva");
         }
         this.peca = peca;
+        this.referenciaExternaId = peca.getId();
+        this.descricaoSnapshot = peca.getNome();
         this.quantidade = quantidade;
         this.precoAplicado = peca.getPreco();
     }
@@ -40,4 +45,15 @@ public class ItemPeca {
     public BigDecimal getSubtotal() {
         return precoAplicado.multiply(BigDecimal.valueOf(quantidade));
     }
+
+    public UUID getReferenciaCatalogoId() {
+        return referenciaExternaId != null ? referenciaExternaId : peca != null ? peca.getId() : null;
+    }
+    public ItemPeca(UUID referencia, String descricao, BigDecimal preco, int quantidade) {
+        if (referencia == null || descricao == null || descricao.isBlank() || preco == null || preco.signum() <= 0 || quantidade <= 0)
+            throw new IllegalArgumentException("Item de catálogo inválido");
+        this.referenciaExternaId = referencia; this.descricaoSnapshot = descricao;
+        this.precoAplicado = preco; this.quantidade = quantidade;
+    }
+    public String getDescricaoCatalogo() { return descricaoSnapshot != null ? descricaoSnapshot : peca != null ? peca.getNome() : null; }
 }

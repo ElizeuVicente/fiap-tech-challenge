@@ -1,5 +1,27 @@
 # Oficina Tech Challenge - Sistema de Oficina
 
+> Fase 4 em desenvolvimento: a OS usa inbox e Saga persistida, com outbox e integração local de reserva e execução. O consumidor RabbitMQ é opcional; a fila durável `oficina.os.billing.v1` tem DLQ e a inbox deduplica por `eventId`. O sandbox Mercado Pago e a segurança de produção ainda exigem validação.
+
+No Compose Fase 4, `OFICINA_FASE4_PAYMENT_GATE=true` faz a aprovação aguardar pagamento, sem baixar estoque, e rejeita atualização direta para execução. O coordenador libera a Execução após evento de pagamento e reserva confirmada. Com as integrações desabilitadas, a opção é `false` por compatibilidade com o fluxo legado, que **não tem essa proteção**; não use esse modo para a Fase 4.
+
+Para testar a comunicação local Billing → RabbitMQ → inbox da OS, com os repositórios irmãos ao lado deste, execute `docker compose -f compose.fase4.yaml up -d --build` e depois `bash scripts/smoke-fase4-billing-os.sh` (requer `curl`, `jq`, `uuidgen` e Docker). A configuração usa senhas de teste, portas restritas a localhost e volumes próprios. A OS inicia antes do publicador para declarar sua fila; em uma implantação real a topologia durável deve ser provisionada antes da publicação. O smoke insere dados sintéticos nos volumes. Para parar os containers preservando os dados, use `docker compose -f compose.fase4.yaml stop`. A configuração não representa fluxo completo nem segurança de produção.
+
+O mesmo Compose inicia o serviço de Execução em `127.0.0.1:18082` com MongoDB próprio, disponível apenas na rede interna. Defina `EXECUTION_SERVICE_TOKEN` e `BILLING_SERVICE_TOKEN` no ambiente com pelo menos 32 caracteres cada; chamadas diretas às respectivas APIs devem enviar o token correto no cabeçalho `X-Service-Token`. Quando habilitada, a OS registra a criação em uma outbox e tenta enviá-la à Execução por HTTP; o Compose usa uma filial fixa exclusivamente para teste. A autenticação compartilhada não oferece autorização por filial nem transporte criptografado; MongoDB local não é autenticado.
+
+A OS consulta periodicamente a Execução para receber a conclusão depois do diagnóstico. Respostas com filial ou OS divergentes são recusadas; `COMPLETED` finaliza somente uma OS que já esteja em execução, com registro no histórico e reaplicação idempotente. No modo integrado, a finalização direta pela API da OS é bloqueada.
+
+Novas solicitações de orçamento integrado enviam os itens congelados ao Billing e guardam o mesmo snapshot na outbox; solicitações antigas sem itens continuam usando o contrato anterior. Após confirmação de pagamento, a Saga confere os itens, reserva as peças, autoriza e inicia o reparo. A Execução consome a mesma reserva; reversões antes do início cancelam a autorização, e após o início exigem intervenção. Falta de estoque confirmada cria um pedido financeiro persistido; o estorno depende de confirmação no provedor. Orçamentos antigos sem snapshot exigem reconciliação e os itens ainda vêm do catálogo legado da OS.
+
+O script `scripts/smoke-fase4-saga-sintetica.sh` demonstrou abertura, diagnóstico, orçamento, aprovação, reserva, execução e finalização nos três serviços em Compose isolado, com uma peça cujo estoque passou de cinco para três. **O evento de pagamento é inserido diretamente no banco de teste**, sem chamada ao Mercado Pago. O script exige `DEMO_ALLOW_SYNTHETIC_PAYMENT=1` e o projeto Compose específico `fiap-saga-demo-5921`. Não o use em bancos com dados reais.
+
+A consulta de cliente pela Lambda pode usar `POST /internal/auth/client-lookup`, habilitada por `OFICINA_INTERNAL_AUTH_ENABLED=true` e protegida por `OFICINA_INTERNAL_AUTH_SERVICE_TOKEN` com pelo menos 32 caracteres. Configure o mesmo token na Lambda e exponha a rota somente por rede interna com HTTPS. A substituição está implementada no código, mas ainda precisa ser implantada e validada entre os dois serviços; não exponha esse endpoint publicamente.
+
+Para criar o primeiro administrador em um banco local vazio, configure também `BOOTSTRAP_ADMIN_USERNAME` e `BOOTSTRAP_ADMIN_PASSWORD` no ambiente antes de subir o Compose. Não use credenciais reais no laboratório nem as versione.
+
+O script `scripts/smoke-fase4-diagnostico.sh` testa abertura autenticada, recuperação de indisponibilidade da Execução e retorno de diagnóstico. Ele atua no projeto Compose isolado `oficina-fase4-e2e`, precisa das variáveis de token e bootstrap acima e requer que esse projeto seja iniciado primeiro com `docker compose -p oficina-fase4-e2e -f compose.fase4.yaml up -d --build`. O script para e reinicia a Execução e grava dados sintéticos; use somente nesse ambiente de teste.
+
+Existe também um dispatcher experimental de orçamento, desabilitado por padrão (`oficina.billing-quote.enabled`), que grava o valor total e IDs na outbox antes de chamar Billing. Ele requer `oficina.billing-quote.service-token` e gate de pagamento habilitado. O teste local `scripts/smoke-fase4-orcamento.sh` cobre a criação no Billing real e aprovação até `AGUARDANDO_PAGAMENTO`, com `OFICINA_BILLING_QUOTE_ENABLED=true` no projeto Compose isolado `oficina-fase4-e2e`. Usa filial fixa e não transmite itens. Não habilite fora de um laboratório isolado. Aprovação ainda não comprova pagamento.
+
 Backend para gestao operacional de uma oficina mecanica, desenvolvido para o Tech Challenge FIAP 14SOAT. O projeto evolui o MVP das Fases 1 e 2 e inclui a Fase 3 com migrations, métricas Prometheus, correlação de requisições e segurança por papel/CPF. A arquitetura dos quatro repositórios foi implantada e validada no AWS Academy Learner Lab em 23/10/2026; os recursos cloud são temporários e não constituem URLs permanentes. Consulte a [evidência técnica e o estado da entrega](architecture/fase3-aws.md#execução-validada-no-learner-lab).
 
 > Este repositório ainda inclui laboratório local de Docker/Kubernetes. Não confunda esse laboratório com a implantação gerenciada exigida na Fase 3.
@@ -491,3 +513,24 @@ Token JWT invalido:
 - confirme que o header e `Authorization: Bearer <token>`;
 - gere novo token em `/api/auth/login`;
 - verifique se o `.env` tem `SECURITY_JWT_SECRET`.
+# Catálogo externo experimental — Fase 4
+
+No Compose de Fase 4, `OFICINA_EXECUTION_CATALOG_ENABLED=true` habilita a consulta de peças e serviços por filial ao catálogo da Execução. O padrão é `false`; antes de ativar é necessário migrar e reconciliar dados e estoque. Itens novos congelam ID, descrição e preço; ordens antigas preservam seus valores. A filial ainda é configurada estaticamente. O script `scripts/smoke-fase4-saga-sintetica.sh` prepara os catálogos quando a flag está ativa e usa pagamento simulado, não um pagamento Mercado Pago.
+
+# Restrição local de filiais da Execução
+
+O Compose integrado repassa `EXECUTION_ALLOWED_BRANCHES`, uma lista opcional de UUIDs separados por vírgula. Vazia, a lista não restringe filiais; preenchida, limita as rotas internas da Execução, mas não substitui TLS nem autorização individual.
+
+# Restrição local de filiais do Billing
+
+O Compose integrado repassa `BILLING_ALLOWED_BRANCHES`, opcional e vazio por padrão, para limitar a credencial compartilhada do Billing. Essa lista não substitui TLS ou autenticação individual.
+
+# Proteção experimental por filial
+
+`OFICINA_BRANCH_ACCESS_ENABLED=true` exige vínculo explícito usuário-filial para operações administrativas sobre OS. A listagem retorna apenas ordens das filiais autorizadas e omite ordens sem filial; as rotas administrativas legadas de clientes, peças e serviços continuam bloqueadas, pois não possuem isolamento por filial. A configuração é desabilitada por padrão e não substitui a gestão auditada de vínculos nem uma revisão de todas as integrações.
+
+O script operacional `scripts/gerenciar-vinculo-filial.sh grant|revoke usuario filial-uuid operador motivo` altera vínculos em transação no PostgreSQL configurado via variáveis padrão `PG*` ou `.pgpass`. O banco registra o usuário de banco, o operador declarado e o motivo; o operador declarado não é identidade autenticada. A credencial operacional deve ser restrita, e este procedimento não é uma API de administração nem uma solução completa de autorização.
+
+# Exigência opcional de HTTPS interno
+
+`OFICINA_INTERNAL_TLS_REQUIRED=true` impede a OS de iniciar com URLs HTTP para integrações habilitadas de Billing ou Execução. O Compose local mantém o padrão `false`. Essa verificação não provisiona certificados, não configura mTLS e não protege por si só RabbitMQ ou conexões de banco; o ambiente de implantação deve fornecer TLS e validar certificados confiáveis.

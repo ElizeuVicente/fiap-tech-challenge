@@ -6,6 +6,9 @@ import com.oficina.tech_challenge.application.dtos.AberturaOrdemServicoCommand;
 import com.oficina.tech_challenge.application.dtos.AtualizacaoStatusCommand;
 import com.oficina.tech_challenge.application.dtos.NotificacaoOrcamentoCommand;
 import com.oficina.tech_challenge.application.interfaces.IGerenciadorOrdemServico;
+import com.oficina.tech_challenge.application.interfaces.ExecutionOrderDispatch;
+import com.oficina.tech_challenge.application.interfaces.BillingQuoteDispatch;
+import com.oficina.tech_challenge.application.interfaces.ExecutionCatalogQuery;
 import com.oficina.tech_challenge.domain.entities.*;
 import com.oficina.tech_challenge.domain.repositories.ClienteRepository;
 import com.oficina.tech_challenge.domain.repositories.NotificacaoOrcamentoRepository;
@@ -36,6 +39,29 @@ public class GerenciadorOrdemServico implements IGerenciadorOrdemServico {
     private final VeiculoRepository veiculoRepository;
     private final NotificacaoOrcamentoRepository notificacaoRepository;
     private final GerenciadorCliente gerenciadorCliente;
+    private ExecutionOrderDispatch executionDispatch;
+    private BillingQuoteDispatch billingDispatch;
+    private ExecutionCatalogQuery executionCatalog;
+    @org.springframework.beans.factory.annotation.Value("${oficina.execution.branch-id:}")
+    private String catalogBranchId;
+    @org.springframework.beans.factory.annotation.Value("${oficina.fase4.payment-gate:false}")
+    private boolean paymentGate;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setExecutionDispatch(ExecutionOrderDispatch executionDispatch) { this.executionDispatch = executionDispatch; }
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setBillingDispatch(BillingQuoteDispatch billingDispatch) { this.billingDispatch = billingDispatch; }
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setExecutionCatalog(ExecutionCatalogQuery executionCatalog) { this.executionCatalog = executionCatalog; }
+
+    private OrdemServico registrarAbertura(OrdemServico os) {
+        OrdemServico saved = osRepository.save(os);
+        if (executionDispatch != null) {
+            if (saved.getFilialId() == null) executionDispatch.schedule(saved.getId());
+            else executionDispatch.schedule(saved.getId(), saved.getFilialId());
+        }
+        return saved;
+    }
 
     public GerenciadorOrdemServico(OrdemServicoRepository osRepository,
             ServicoRepository servicoRepository,
@@ -55,6 +81,11 @@ public class GerenciadorOrdemServico implements IGerenciadorOrdemServico {
 
     @Transactional
     public OrdemServico criarOS(UUID clienteId, String placa) {
+        return criarOS(clienteId, placa, null);
+    }
+
+    @Transactional
+    public OrdemServico criarOS(UUID clienteId, String placa, UUID filialId) {
         Cliente cliente = gerenciadorCliente.buscarPorId(clienteId)
                 .orElseThrow(() -> new IllegalArgumentException("Cliente não encontrado"));
 
@@ -64,7 +95,8 @@ public class GerenciadorOrdemServico implements IGerenciadorOrdemServico {
                 .orElseThrow(() -> new IllegalArgumentException("Veículo não encontrado para este cliente"));
 
         OrdemServico os = new OrdemServico(cliente, veiculo);
-        return osRepository.save(os);
+        if (filialId != null) os.identificarFilial(filialId);
+        return registrarAbertura(os);
     }
 
     @Transactional
@@ -99,8 +131,9 @@ public class GerenciadorOrdemServico implements IGerenciadorOrdemServico {
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("Veículo não encontrado após persistência"));
         OrdemServico os = new OrdemServico(clientePersistido, veiculoPersistido);
+        if (command.filialId() != null) os.identificarFilial(command.filialId());
         adicionarItensNaOrdem(os, command.servicos(), command.pecas());
-        return osRepository.save(os);
+        return registrarAbertura(os);
     }
 
     @Transactional
@@ -122,17 +155,13 @@ public class GerenciadorOrdemServico implements IGerenciadorOrdemServico {
         }
 
         for (UUID sId : servicoIds) {
-            Servico s = servicoRepository.findById(sId)
-                    .orElseThrow(() -> new IllegalArgumentException("Serviço não encontrado: " + sId));
-            os.adicionarServico(s);
+            adicionarServicoPorId(os, sId);
         }
 
         for (int i = 0; i < pecaIds.size(); i++) {
             UUID pId = pecaIds.get(i);
             int qtd = quantidades.get(i);
-            Peca p = pecaRepository.findById(pId)
-                    .orElseThrow(() -> new IllegalArgumentException("Peça não encontrada: " + pId));
-            os.adicionarPeca(p, qtd);
+            adicionarPecaPorId(os, pId, qtd);
         }
 
         osRepository.save(os);
@@ -146,24 +175,60 @@ public class GerenciadorOrdemServico implements IGerenciadorOrdemServico {
         return osRepository.save(os);
     }
 
+    /** Applies an external diagnosis once without overwriting a later local transition. */
+    @Transactional
+    public void registrarDiagnosticoExecucao(UUID osId, String diagnostico) {
+        if (diagnostico == null || diagnostico.isBlank() || diagnostico.length() > 4000)
+            throw new IllegalArgumentException("Diagnóstico inválido");
+        OrdemServico os = osRepository.findById(osId)
+                .orElseThrow(() -> new IllegalArgumentException("OS não encontrada"));
+        if (os.getStatus() == StatusOrdemServico.DIAGNOSTICO && diagnostico.equals(os.getDiagnostico())) return;
+        if (os.getStatus() != StatusOrdemServico.RECEBIDA)
+            throw new IllegalStateException("Diagnóstico externo conflita com o estado atual da OS");
+        StatusOrdemServico anterior = os.getStatus();
+        os.registrarDiagnostico(diagnostico);
+        os.registrarHistorico(anterior, "EXECUCAO", null);
+        osRepository.save(os);
+    }
+
     @Transactional
     public OrdemServico gerarOrcamento(UUID osId) {
         OrdemServico os = osRepository.findById(osId)
                 .orElseThrow(() -> new IllegalArgumentException("OS não encontrada"));
+        if (billingDispatch != null && os.getValorTotal().signum() <= 0) throw new IllegalArgumentException("Orçamento deve ter valor positivo");
         StatusOrdemServico anterior = os.getStatus(); os.gerarOrcamento(); os.registrarHistorico(anterior, "API", MDC.get("correlationId"));
+        if (billingDispatch != null) {
+            var items = new java.util.ArrayList<BillingQuoteDispatch.Item>();
+            os.getServicos().forEach(item -> items.add(new BillingQuoteDispatch.Item("SERVICE", item.getReferenciaCatalogoId(), 1, item.getPrecoAplicado())));
+            os.getPecas().forEach(item -> items.add(new BillingQuoteDispatch.Item("PART", item.getReferenciaCatalogoId(), item.getQuantidade(), item.getPrecoAplicado())));
+            if (items.isEmpty() || items.size() > 100) throw new IllegalArgumentException("Orçamento deve ter de 1 a 100 itens");
+            if (os.getFilialId() == null) billingDispatch.schedule(osId, os.getValorTotal(), items);
+            else billingDispatch.schedule(osId, os.getFilialId(), os.getValorTotal(), items);
+        }
         return osRepository.save(os);
     }
 
     @Transactional
     public void aprovarOrcamento(UUID osId) {
+        if (billingDispatch != null) throw new IllegalStateException("Decisão deve ser informada pelo serviço de orçamento");
         OrdemServico os = osRepository.findById(osId)
                 .orElseThrow(() -> new IllegalArgumentException("OS não encontrada"));
-        StatusOrdemServico anterior = os.getStatus(); aprovarComBaixaDeEstoque(os); os.registrarHistorico(anterior, "API", MDC.get("correlationId"));
+        StatusOrdemServico anterior = os.getStatus(); aprovarConformeModo(os); os.registrarHistorico(anterior, "API", MDC.get("correlationId"));
         osRepository.save(os);
     }
 
     @Transactional
     public OrdemServico processarNotificacaoOrcamento(UUID osId, NotificacaoOrcamentoCommand command) {
+        if (billingDispatch != null) throw new IllegalStateException("Decisão deve ser informada pelo serviço de orçamento");
+        return aplicarDecisaoOrcamento(osId, command);
+    }
+
+    @Transactional
+    public OrdemServico processarDecisaoBilling(UUID osId, NotificacaoOrcamentoCommand command) {
+        return aplicarDecisaoOrcamento(osId, command);
+    }
+
+    private OrdemServico aplicarDecisaoOrcamento(UUID osId, NotificacaoOrcamentoCommand command) {
         validarNotificacao(command);
         OrdemServico os = osRepository.findById(osId)
                 .orElseThrow(() -> new IllegalArgumentException("OS não encontrada"));
@@ -180,7 +245,7 @@ public class GerenciadorOrdemServico implements IGerenciadorOrdemServico {
 
         StatusOrdemServico anterior = os.getStatus();
         if (command.decisao() == DecisaoOrcamento.APROVADO) {
-            aprovarComBaixaDeEstoque(os);
+            aprovarConformeModo(os);
         } else {
             os.recusar();
         }
@@ -201,11 +266,16 @@ public class GerenciadorOrdemServico implements IGerenciadorOrdemServico {
         if (command == null || command.novoStatus() == null) {
             throw new IllegalArgumentException("Novo status é obrigatório");
         }
+        if (executionDispatch != null && command.novoStatus() == StatusOrdemServico.FINALIZADA)
+            throw new IllegalStateException("Conclusão deve ser informada pelo serviço de execução");
+        if (billingDispatch != null && command.novoStatus() == StatusOrdemServico.RECUSADA)
+            throw new IllegalStateException("Decisão deve ser informada pelo serviço de orçamento");
         OrdemServico os = osRepository.findById(osId)
                 .orElseThrow(() -> new IllegalArgumentException("OS não encontrada"));
 
         StatusOrdemServico anterior = os.getStatus();
         if (command.novoStatus() == StatusOrdemServico.EXECUCAO) {
+            if (paymentGate) throw new IllegalStateException("Execução requer pagamento e reserva confirmados pela integração");
             aprovarComBaixaDeEstoque(os);
         } else {
             os.atualizarStatus(command.novoStatus());
@@ -216,9 +286,32 @@ public class GerenciadorOrdemServico implements IGerenciadorOrdemServico {
 
     @Transactional
     public void finalizarOS(UUID osId) {
+        if (executionDispatch != null) throw new IllegalStateException("Conclusão deve ser informada pelo serviço de execução");
         OrdemServico os = osRepository.findById(osId)
                 .orElseThrow(() -> new IllegalArgumentException("OS não encontrada"));
         StatusOrdemServico anterior = os.getStatus(); os.finalizar(); os.registrarHistorico(anterior, "API", MDC.get("correlationId"));
+        osRepository.save(os);
+    }
+
+    @Transactional
+    public void registrarConclusaoExecucao(UUID osId) {
+        OrdemServico os = osRepository.findById(osId)
+                .orElseThrow(() -> new IllegalArgumentException("OS não encontrada"));
+        if (os.getStatus() == StatusOrdemServico.FINALIZADA || os.getStatus() == StatusOrdemServico.ENTREGUE) return;
+        StatusOrdemServico anterior = os.getStatus();
+        os.finalizar();
+        os.registrarHistorico(anterior, "EXECUCAO", null);
+        osRepository.save(os);
+    }
+
+    @Transactional
+    public void registrarInicioExecucaoConfirmada(UUID osId) {
+        OrdemServico os = osRepository.findById(osId)
+                .orElseThrow(() -> new IllegalArgumentException("OS não encontrada"));
+        if (os.getStatus() == StatusOrdemServico.EXECUCAO || os.getStatus() == StatusOrdemServico.FINALIZADA || os.getStatus() == StatusOrdemServico.ENTREGUE) return;
+        StatusOrdemServico anterior = os.getStatus();
+        os.iniciarExecucaoConfirmada();
+        os.registrarHistorico(anterior, "EXECUCAO", null);
         osRepository.save(os);
     }
 
@@ -244,6 +337,11 @@ public class GerenciadorOrdemServico implements IGerenciadorOrdemServico {
 
     public List<OrdemServico> listarOperacionais() {
         return osRepository.findOperacionaisOrdenadas();
+    }
+
+    public List<OrdemServico> listarPorFiliais(List<UUID> filiais, boolean operacional) {
+        if (filiais == null || filiais.isEmpty()) return List.of();
+        return operacional ? osRepository.findOperacionaisPorFiliais(filiais) : osRepository.findByFilialIdIn(filiais);
     }
 
     public MonitoramentoData getMonitoramento() {
@@ -296,18 +394,40 @@ public class GerenciadorOrdemServico implements IGerenciadorOrdemServico {
             List<AberturaOrdemServicoCommand.PecaData> pecas) {
         if (servicos != null) {
             for (AberturaOrdemServicoCommand.ServicoData item : servicos) {
-                Servico servico = servicoRepository.findById(item.servicoId())
-                        .orElseThrow(() -> new IllegalArgumentException("Serviço não encontrado: " + item.servicoId()));
-                os.adicionarServico(servico);
+                adicionarServicoPorId(os, item.servicoId());
             }
         }
         if (pecas != null) {
             for (AberturaOrdemServicoCommand.PecaData item : pecas) {
-                Peca peca = pecaRepository.findById(item.pecaId())
-                        .orElseThrow(() -> new IllegalArgumentException("Peça não encontrada: " + item.pecaId()));
-                os.adicionarPeca(peca, item.quantidade());
+                adicionarPecaPorId(os, item.pecaId(), item.quantidade());
             }
         }
+    }
+
+    private UUID catalogBranch(OrdemServico os) {
+        if (os.getFilialId() != null) return os.getFilialId();
+        try { return UUID.fromString(catalogBranchId); }
+        catch (RuntimeException invalid) { throw new IllegalStateException("Filial do catálogo não configurada", invalid); }
+    }
+
+    private void adicionarServicoPorId(OrdemServico os, UUID id) {
+        if (executionCatalog == null) {
+            os.adicionarServico(servicoRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("Serviço não encontrado: " + id)));
+            return;
+        }
+        if (!paymentGate) throw new IllegalStateException("Catálogo externo exige o controle de pagamento da Fase 4");
+        var item = executionCatalog.service(catalogBranch(os), id);
+        os.adicionarServicoCatalogo(item.referenceId(), item.description(), item.unitPrice());
+    }
+
+    private void adicionarPecaPorId(OrdemServico os, UUID id, int quantidade) {
+        if (executionCatalog == null) {
+            os.adicionarPeca(pecaRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("Peça não encontrada: " + id)), quantidade);
+            return;
+        }
+        if (!paymentGate) throw new IllegalStateException("Catálogo externo exige o controle de pagamento da Fase 4");
+        var item = executionCatalog.part(catalogBranch(os), id);
+        os.adicionarPecaCatalogo(item.referenceId(), item.description(), item.unitPrice(), quantidade);
     }
 
     private void aprovarComBaixaDeEstoque(OrdemServico os) {
@@ -318,6 +438,11 @@ public class GerenciadorOrdemServico implements IGerenciadorOrdemServico {
             item.getPeca().baixarEstoque(item.getQuantidade());
         }
         os.aprovar();
+    }
+
+    private void aprovarConformeModo(OrdemServico os) {
+        if (paymentGate) os.aprovarAguardandoPagamento();
+        else aprovarComBaixaDeEstoque(os);
     }
 
     private void validarAbertura(AberturaOrdemServicoCommand command) {

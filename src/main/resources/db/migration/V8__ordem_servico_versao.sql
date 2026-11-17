@@ -1,0 +1,2 @@
+ALTER TABLE ordem_servico ADD COLUMN versao BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE ordem_servico ALTER COLUMN diagnostico TYPE VARCHAR(4000);

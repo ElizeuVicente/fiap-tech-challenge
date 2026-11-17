@@ -6,6 +6,8 @@ import com.oficina.tech_challenge.application.dtos.AberturaOrdemServicoCommand;
 import com.oficina.tech_challenge.application.dtos.AtualizacaoStatusCommand;
 import com.oficina.tech_challenge.application.dtos.NotificacaoOrcamentoCommand;
 import com.oficina.tech_challenge.application.interfaces.IGerenciadorOrdemServico;
+import com.oficina.tech_challenge.application.interfaces.BillingCheckoutQuery;
+import com.oficina.tech_challenge.infrastructure.security.BranchAccessPolicy;
 import com.oficina.tech_challenge.domain.entities.DecisaoOrcamento;
 import com.oficina.tech_challenge.domain.entities.StatusOrdemServico;
 import com.oficina.tech_challenge.domain.entities.OrdemServico;
@@ -27,27 +29,36 @@ import java.util.UUID;
 public class OrdemServicoController {
     private final IGerenciadorOrdemServico gerenciadorOS;
     private final String webhookSecret;
+    private final org.springframework.beans.factory.ObjectProvider<BillingCheckoutQuery> billingCheckout;
+    private final BranchAccessPolicy branchAccess;
 
     public OrdemServicoController(IGerenciadorOrdemServico gerenciadorOS,
-            @Value("${external.webhook.secret}") String webhookSecret) {
+            @Value("${external.webhook.secret}") String webhookSecret,
+            org.springframework.beans.factory.ObjectProvider<BillingCheckoutQuery> billingCheckout, BranchAccessPolicy branchAccess) {
         this.gerenciadorOS = gerenciadorOS;
         this.webhookSecret = webhookSecret;
+        this.billingCheckout = billingCheckout;
+        this.branchAccess = branchAccess;
     }
 
     @PostMapping
-    public ResponseEntity<OrdemServicoResponse> criar(@RequestBody CriarOSRequest request) {
+    public ResponseEntity<OrdemServicoResponse> criar(@RequestBody CriarOSRequest request, Authentication authentication) {
+        branchAccess.validateCreation(authentication, request.getFilialId());
         if (request.getCliente() != null || request.getVeiculo() != null) {
             return ResponseEntity.status(HttpStatus.CREATED)
                     .body(OrdemServicoResponse.from(gerenciadorOS.abrirOrdemServico(request.toCommand())));
         }
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(OrdemServicoResponse.from(gerenciadorOS.criarOS(request.getClienteId(), request.getPlaca())));
+                .body(OrdemServicoResponse.from(gerenciadorOS.criarOS(request.getClienteId(), request.getPlaca(), request.getFilialId())));
     }
 
     @GetMapping
     public ResponseEntity<List<OrdemServicoResponse>> listar(
-            @RequestParam(name = "operacional", defaultValue = "false") boolean operacional) {
-        List<OrdemServicoResponse> ordens = (operacional ? gerenciadorOS.listarOperacionais() : gerenciadorOS.listarTodas())
+            @RequestParam(name = "operacional", defaultValue = "false") boolean operacional, Authentication authentication) {
+        var filiais = branchAccess.allowedBranches(authentication);
+        var visiveis = filiais.isPresent() ? gerenciadorOS.listarPorFiliais(filiais.get(), operacional)
+                : (operacional ? gerenciadorOS.listarOperacionais() : gerenciadorOS.listarTodas());
+        List<OrdemServicoResponse> ordens = visiveis
                 .stream()
                 .map(OrdemServicoResponse::from)
                 .toList();
@@ -72,6 +83,15 @@ public class OrdemServicoController {
                     return ResponseEntity.ok(OrdemServicoStatusResponse.from(os));
                 })
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    @GetMapping("/{id}/checkout")
+    public ResponseEntity<BillingCheckoutQuery.Checkout> buscarCheckout(@PathVariable UUID id, Authentication authentication) {
+        OrdemServico os = gerenciadorOS.buscarPorId(id).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        validarAcessoCliente(os, authentication);
+        BillingCheckoutQuery query = billingCheckout.getIfAvailable();
+        if (query == null) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Integração de cobrança não está habilitada");
+        return query.findByOrderId(id).map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @GetMapping("/cliente/{cpfCnpj}")
@@ -175,6 +195,7 @@ public class OrdemServicoController {
 
     public static class CriarOSRequest {
         private UUID clienteId;
+        private UUID filialId;
         private String placa;
         private ClienteRequest cliente;
         private VeiculoRequest veiculo;
@@ -182,6 +203,8 @@ public class OrdemServicoController {
         private List<PecaRequest> pecas;
 
         public UUID getClienteId() { return clienteId; }
+        public UUID getFilialId() { return filialId; }
+        public void setFilialId(UUID filialId) { this.filialId = filialId; }
         public void setClienteId(UUID clienteId) { this.clienteId = clienteId; }
         public String getPlaca() { return placa; }
         public void setPlaca(String placa) { this.placa = placa; }
@@ -211,7 +234,7 @@ public class OrdemServicoController {
                             .toList(),
                     pecas == null ? List.of() : pecas.stream()
                             .map(item -> new AberturaOrdemServicoCommand.PecaData(item.pecaId, item.quantidade))
-                            .toList());
+                            .toList(), filialId);
         }
     }
 
